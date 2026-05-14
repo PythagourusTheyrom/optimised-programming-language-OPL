@@ -67,17 +67,17 @@ issue: opl.v uses os.system for git clone with no fine-grained error handling â€
 14:
 bug: Hardcoded "Engine" Struct Type (ARM64)
 state: High
-issue: In backend_arm64_mac.v (line 311 and 490), the struct type defaults to "Engine" if it cannot be resolved. This causes incorrect offset calculations for all other struct types.
+issue: In backend_arm64_mac.v (line 343 and 490), the struct type defaults to "Engine" if it cannot be resolved. This causes incorrect offset calculations for all other struct types.
 
 15:
 bug: Missing Float Comparisons (ARM64)
-state: Medium
-issue: The float operation branch in ARM64 backend only handles arithmetic (+, -, *, /). Comparisons like '==' or '<' on floats fall through to the integer 'cmp' branch, which uses the wrong registers (x0 instead of d0).
+state: Critical
+issue: The float operation branch in ARM64 backend (line 376) only handles arithmetic (+, -, *, /). Comparisons like '==' or '<' on floats fall through to the integer 'else' block (line 393), which pushes x0 instead of d0, resulting in comparisons against garbage data.
 
 16:
 bug: Unsafe Cast in Property Assignment (ARM64)
 state: High
-issue: Line 325 still uses (expr.left.object as ast.Ident), which will cause the compiler to crash if a property is assigned on the result of a function call or complex expression.
+issue: Line 357 still uses (expr.left.object as ast.Ident).value, which will cause the compiler to crash if a property is assigned on the result of a function call or any complex expression.
 
 17:
 bug: Missing Float Printing in Println (ARM64)
@@ -85,16 +85,16 @@ state: Medium
 issue: The ARM64 println handler only supports string and integer formats. Printing a floating-point variable will result in garbage output or %lld interpretation of the bit pattern.
 
 18:
-bug: Inconsistent Stack Frame Size
-state: Medium
-issue: The ARM64 backend uses 256 for function prologues but 512 for others, and sometimes manually adjusts sp by 16 in helper functions, leading to potential misalignment or overlap in deeply nested calls.
+bug: Inconsistent Stack Scaling for IndexExpr Assignment
+state: High
+issue: In backend_arm64_mac.v line 334, IndexExpr assignment hardcodes 8-byte scaling ('mov x2, #8'), while the load handler at line 478 hardcodes 16-byte scaling. This mismatch ensures data corruption when modifying arrays of structs.
 
 19:
-bug: Missing Property Type Validation
+bug: Missing Thread Detachment
 state: Medium
-issue: The compiler assumes all struct properties are 8 bytes (pointers or ints). If a struct contains a smaller type (once supported) or a sub-struct, property access will calculate the wrong address.
+issue: The ARM64 SpawnStmt calls _pthread_create but never calls _pthread_detach or _pthread_join. This leads to resource leakage as thread metadata is never cleaned up by the kernel.
 
 20:
-bug: Deadlock in Joined Thread Spawn
+bug: Incomplete Type Inference for Method Returns
 state: Low
-issue: The x86 backend calls pthread_join immediately after pthread_create (line 103), effectively making the spawn synchronous and negating all benefits of concurrency.
+issue: LetStmt type inference for MethodCall (line 175) is hardcoded to recognize only the 'check' method. Any other method return will default to 'int', potentially breaking subsequent operations on the variable.

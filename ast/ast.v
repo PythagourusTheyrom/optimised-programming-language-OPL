@@ -14,10 +14,16 @@ pub mut:
 	structs   []StructDecl
 }
 
+pub struct Param {
+pub:
+	name string
+	typ  string
+}
+
 pub struct Function {
 pub:
 	name          string
-	params        []Ident
+	params        []Param
 	receiver_name string
 	receiver_type string
 	body          Block

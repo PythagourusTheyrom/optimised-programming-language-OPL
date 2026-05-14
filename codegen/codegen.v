@@ -23,7 +23,8 @@ pub fn (mut c Compiler) compile(program ast.Program) string {
 		} else {
 			c.c_code += 'long long ${func.name}('
 			for i, p in func.params {
-				c.c_code += 'long long ${p.value}'
+				ctype := if p.typ == 'string' { 'char*' } else { 'long long' }
+				c.c_code += '$ctype ${p.name}'
 				if i < func.params.len - 1 {
 					c.c_code += ', '
 				}
@@ -58,7 +59,8 @@ fn (mut c Compiler) compile_function(f ast.Function) {
 	} else {
 		c.c_code += 'void ${f.name}('
 		for i, p in f.params {
-			c.c_code += 'int ${p.value}'
+			ctype := if p.typ == 'string' { 'char*' } else { 'long long' }
+			c.c_code += '$ctype ${p.name}'
 			if i < f.params.len - 1 {
 				c.c_code += ', '
 			}

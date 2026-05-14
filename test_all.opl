@@ -43,5 +43,12 @@ fn main() {
         println("Status: HEAP ALLOCATION SUCCESSFUL");
     }
     
+    // 6. Test Concurrency with Argument
+    spawn thread_func("SUCCESS: THREAD SPAWNED WITH ARG");
+    
     println("--- VALIDATION COMPLETE: OPL IS FULLY OPERATIONAL ---");
+}
+
+fn thread_func(msg string) {
+    println("Background Thread:", msg);
 }

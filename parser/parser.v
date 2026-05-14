@@ -93,14 +93,17 @@ fn (mut p Parser) parse_function() ast.Function {
 	p.next_token() // skip name
 	
 	p.next_token() // skip '('
-	mut params := []ast.Ident{}
+	mut params := []ast.Param{}
 	if p.cur_tok.kind != .rparen {
 		for p.cur_tok.kind != .eof {
-			params << ast.Ident{value: p.cur_tok.lit}
+			pname := p.cur_tok.lit
 			p.next_token() // skip ident
+			mut ptype := "int"
 			if p.cur_tok.kind != .comma && p.cur_tok.kind != .rparen {
+				ptype = p.cur_tok.lit
 				p.next_token() // skip type
 			}
+			params << ast.Param{name: pname, typ: ptype}
 			if p.cur_tok.kind == .comma {
 				p.next_token()
 			} else {

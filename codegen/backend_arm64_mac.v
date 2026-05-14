@@ -14,6 +14,7 @@ mut:
 	struct_offsets map[string]int
 	struct_sizes   map[string]int
 	var_types      map[string]string
+	current_frame_size int
 }
 
 pub fn new_arm64_macos() &AsmArm64Macos {
@@ -101,7 +102,28 @@ fn (mut c AsmArm64Macos) generate_function(func ast.Function) {
 	}
 	c.text_section += '.global ${func_label}\n'
 	c.text_section += '${func_label}:\n'
-	c.text_section += '\tstp x29, x30, [sp, #-256]!\n'
+	// Pass 1: Calculate stack size
+	mut local_stack := 16 // for x29, x30
+	if func.receiver_name != '' { local_stack += 8 }
+	local_stack += func.params.len * 8
+	
+	// Scan body for local variables and literals
+	for stmt in func.body.statements {
+		if stmt is ast.LetStmt { 
+			local_stack += 8 
+			if stmt.value is ast.StructLiteral { local_stack += stmt.value.values.len * 8 }
+			if stmt.value is ast.ArrayLiteral { local_stack += stmt.value.elements.len * 8 }
+		}
+		if stmt is ast.ExprStmt {
+			if stmt.expr is ast.StructLiteral { local_stack += stmt.expr.values.len * 8 }
+			if stmt.expr is ast.ArrayLiteral { local_stack += stmt.expr.elements.len * 8 }
+		}
+	}
+	
+	// Align to 16 bytes and add a safety buffer for expressions
+	c.current_frame_size = ((local_stack + 63) / 16) * 16 
+	
+	c.text_section += '\tstp x29, x30, [sp, #-${c.current_frame_size}]!\n'
 	c.text_section += '\tmov x29, sp\n'
 	
 	c.variables = map[string]int{}
@@ -120,7 +142,8 @@ fn (mut c AsmArm64Macos) generate_function(func ast.Function) {
 	for i, p in func.params {
 		reg_idx := i + param_count
 		offset := c.stack_ptr
-		c.variables[p.value] = offset
+		c.variables[p.name] = offset
+		c.var_types[p.name] = p.typ // Track parameter types
 		c.text_section += '\tstr x$reg_idx, [x29, #$offset]\n'
 		c.stack_ptr += 8
 	}
@@ -133,7 +156,7 @@ fn (mut c AsmArm64Macos) generate_function(func ast.Function) {
 		c.text_section += '\tmov x0, #0\n'
 	}
 	c.text_section += '\tmov sp, x29\n'
-	c.text_section += '\tldp x29, x30, [sp], #256\n'
+	c.text_section += '\tldp x29, x30, [sp], #${c.current_frame_size}\n'
 	c.text_section += '\tret\n\n'
 }
 
@@ -169,20 +192,30 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		}
 	} else if stmt is ast.SpawnStmt {
 		func_name := if stmt.call.function.value in c.gpu_funcs { stmt.call.function.value } else { '_${stmt.call.function.value}' }
-		c.text_section += '\t; --- ASM NATIVE THREAD SPAWN ---\n'
-		c.text_section += '\tsub sp, sp, #16\n'
-		c.text_section += '\tmov x0, sp\n'
-		c.text_section += '\tmov x1, #0\n'
-		c.text_section += '\tadrp x2, $func_name@PAGE\n'
-		c.text_section += '\tadd x2, x2, $func_name@PAGEOFF\n'
+		c.text_section += '\t; --- SAFE NATIVE THREAD SPAWN ---\n'
+		
+		// 1. Evaluate argument FIRST and save it to the stack
 		if stmt.call.args.len > 0 {
 			c.generate_expression(stmt.call.args[0])
 		} else {
 			c.text_section += '\tmov x0, #0\n'
 		}
-		c.text_section += '\tmov x3, x0\n' 
+		c.text_section += '\tstr x0, [sp, #-16]!\n' // Save arg
+		
+		// 2. Set up thread ID on stack (another 16 bytes)
+		c.text_section += '\tsub sp, sp, #16\n'
+		c.text_section += '\tmov x0, sp\n'   // x0 = &thread_id
+		c.text_section += '\tmov x1, #0\n'   // x1 = attr (NULL)
+		
+		// 3. Set up function pointer
+		c.text_section += '\tadrp x2, $func_name@PAGE\n'
+		c.text_section += '\tadd x2, x2, $func_name@PAGEOFF\n'
+		
+		// 4. Load arg from its stack slot (16 bytes up)
+		c.text_section += '\tldr x3, [sp, #16]\n'
+		
 		c.text_section += '\tbl _pthread_create\n'
-		c.text_section += '\tadd sp, sp, #16\n'
+		c.text_section += '\tadd sp, sp, #32\n' // Pop both thread_id and arg
 	} else if stmt is ast.IfStmt {
 		c.generate_expression(stmt.condition)
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
@@ -453,7 +486,22 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 		}
 	} else if expr is ast.MethodCall {
 		// Evaluate object (receiver)
-		c.generate_expression(expr.object)
+		if expr.object is ast.Ident {
+			if expr.object.value in c.variables {
+				offset := c.variables[expr.object.value]
+				// Optimization: If it's a struct variable, we need its address
+				// In OPL, local structs store their base address in the variable slot.
+				// So ldr x0, [x29, #offset] is actually correct IF the variable 
+				// stores a pointer. If we support stack-allocated structs directly,
+				// we would use 'add x0, x29, #offset'.
+				// For now, let's ensure we are getting the pointer correctly.
+				c.text_section += '\tldr x0, [x29, #$offset]\n'
+			} else {
+				c.generate_expression(expr.object)
+			}
+		} else {
+			c.generate_expression(expr.object)
+		}
 		c.text_section += '\tstr x0, [sp, #-16]!\n'
 		
 		// Evaluate arguments
@@ -536,22 +584,21 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 					if !c.data_section.contains('fmt_str:') {
 						c.data_section += '.align 3\nfmt_str: .asciz "%s "\n'
 					}
-					c.text_section += '\tstr x0, [sp, #-16]!\n' // Push arg to stack
+					// ABI-compliant call: sp remains 16-byte aligned
+					c.text_section += '\tstp x0, xzr, [sp, #-16]!\n' // Push arg + padding
 					c.text_section += '\tadrp x0, fmt_str@PAGE\n'
 					c.text_section += '\tadd x0, x0, fmt_str@PAGEOFF\n'
-					c.text_section += '\tldr x1, [sp], #16\n' // Pop arg into x1
-					c.text_section += '\tsub sp, sp, #16\n' // Alignment guard
+					c.text_section += '\tldr x1, [sp]\n'            // x1 = arg
 					c.text_section += '\tbl _printf\n'
-					c.text_section += '\tadd sp, sp, #16\n'
+					c.text_section += '\tadd sp, sp, #16\n'         // Restore sp
 				} else {
 					if !c.data_section.contains('fmt_int:') {
 						c.data_section += '.align 3\nfmt_int: .asciz "%lld "\n'
 					}
-					c.text_section += '\tstr x0, [sp, #-16]!\n'
+					c.text_section += '\tstp x0, xzr, [sp, #-16]!\n'
 					c.text_section += '\tadrp x0, fmt_int@PAGE\n'
 					c.text_section += '\tadd x0, x0, fmt_int@PAGEOFF\n'
-					c.text_section += '\tldr x1, [sp], #16\n'
-					c.text_section += '\tsub sp, sp, #16\n'
+					c.text_section += '\tldr x1, [sp]\n'
 					c.text_section += '\tbl _printf\n'
 					c.text_section += '\tadd sp, sp, #16\n'
 				}
@@ -562,9 +609,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			}
 			c.text_section += '\tadrp x0, fmt_nl@PAGE\n'
 			c.text_section += '\tadd x0, x0, fmt_nl@PAGEOFF\n'
-			c.text_section += '\tsub sp, sp, #16\n' // Alignment guard
-			c.text_section += '\tbl _printf\n'
-			c.text_section += '\tadd sp, sp, #16\n'
+			c.text_section += '\tbl _printf\n' // sp is already aligned here
 		} else if expr.function.value == 'input' {
 			// Allocate a buffer on the stack (e.g., 64 bytes)
 			buffer_offset := c.stack_ptr

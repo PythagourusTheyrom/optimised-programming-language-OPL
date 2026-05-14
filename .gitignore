@@ -36,4 +36,4 @@ lldb_script
 *.dSYM/
 
 # Test
-test_*
+test_*.opl

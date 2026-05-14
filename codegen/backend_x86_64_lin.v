@@ -52,7 +52,7 @@ fn (mut c AsmX86_64Linux) generate_function(func ast.Function) {
 	
 	for i, p in func.params {
 		offset := c.stack_ptr
-		c.variables[p.value] = offset
+		c.variables[p.name] = offset
 		// Save args from registers to stack
 		if i == 0 { c.text_section += '\tmov %rdi, -${offset}(%rbp)\n' }
 		if i == 1 { c.text_section += '\tmov %rsi, -${offset}(%rbp)\n' }
