@@ -34,3 +34,6 @@ vcache/
 # ─── Debug Artifacts ─────────────────────────────────────────────────
 lldb_script
 *.dSYM/
+
+# Test
+test_*
