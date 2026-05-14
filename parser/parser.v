@@ -28,10 +28,15 @@ pub fn (mut p Parser) parse_program() ast.Program {
 	mut program := ast.Program{}
 	for p.cur_tok.kind != .eof {
 		if p.cur_tok.kind == .kw_fn || p.cur_tok.kind == .kw_gpu {
-			program.functions << p.parse_function()
+			f := p.parse_function()
+			println("Parsed function: ${f.name}")
+			program.functions << f
 		} else if p.cur_tok.kind == .kw_struct {
-			program.structs << p.parse_struct()
+			s := p.parse_struct()
+			println("Parsed struct: ${s.name.value}")
+			program.structs << s
 		} else {
+			println("Skipping token: ${p.cur_tok.kind} '${p.cur_tok.lit}'")
 			p.next_token()
 		}
 	}
@@ -148,10 +153,10 @@ fn (mut p Parser) parse_statement() ast.Stmt {
 		}
 		return ast.ExprStmt{expr: expr}
 	} else if p.cur_tok.kind == .kw_let {
-		p.next_token() // cur = name
+		p.next_token() // skip 'let', cur = name
 		name := ast.Ident{value: p.cur_tok.lit}
-		p.next_token() // cur = '='
-		p.next_token() // cur = value
+		p.next_token() // skip name, cur = '='
+		p.next_token() // skip '=', cur = value
 		
 		expr := p.parse_expression()
 		if p.cur_tok.kind == .semicolon {
@@ -212,8 +217,6 @@ fn (mut p Parser) parse_statement() ast.Stmt {
 		// Always ensure we move past the last token of the expression
 		if p.cur_tok.kind == .semicolon {
 			p.next_token() // skip ';'
-		} else {
-			p.next_token() // advance to next statement start
 		}
 		return ast.ExprStmt{expr: expr}
 	}
@@ -229,6 +232,10 @@ fn (mut p Parser) parse_primary_expression() ast.Expr {
 	if p.cur_tok.kind == .eof {
 		println("Unexpected EOF during parsing")
 		exit(1)
+	}
+	
+	if p.cur_tok.kind != .string_lit && p.cur_tok.kind != .number && p.cur_tok.kind != .ident && p.cur_tok.kind != .lbracket && p.cur_tok.kind != .kw_true && p.cur_tok.kind != .kw_false && p.cur_tok.kind != .bang && p.cur_tok.kind != .minus {
+		println("Parser Error: Unexpected token ${p.cur_tok.kind} '${p.cur_tok.lit}' at line ${p.cur_tok.line}")
 	}
 	
 	if p.cur_tok.kind == .string_lit {
