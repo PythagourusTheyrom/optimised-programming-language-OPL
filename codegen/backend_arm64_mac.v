@@ -102,26 +102,16 @@ fn (mut c AsmArm64Macos) generate_function(func ast.Function) {
 	}
 	c.text_section += '.global ${func_label}\n'
 	c.text_section += '${func_label}:\n'
-	// Pass 1: Calculate stack size
+	
+	// Pass 1: Calculate stack size recursively
 	mut local_stack := 16 // for x29, x30
 	if func.receiver_name != '' { local_stack += 8 }
 	local_stack += func.params.len * 8
+	local_stack += c.calculate_block_stack(func.body)
 	
-	// Scan body for local variables and literals
-	for stmt in func.body.statements {
-		if stmt is ast.LetStmt { 
-			local_stack += 8 
-			if stmt.value is ast.StructLiteral { local_stack += stmt.value.values.len * 8 }
-			if stmt.value is ast.ArrayLiteral { local_stack += stmt.value.elements.len * 8 }
-		}
-		if stmt is ast.ExprStmt {
-			if stmt.expr is ast.StructLiteral { local_stack += stmt.expr.values.len * 8 }
-			if stmt.expr is ast.ArrayLiteral { local_stack += stmt.expr.elements.len * 8 }
-		}
-	}
-	
-	// Align to 16 bytes and add a safety buffer for expressions
+	// Align to 16 bytes and add a 64-byte safety buffer for expressions/printf
 	c.current_frame_size = ((local_stack + 63) / 16) * 16 
+	if c.current_frame_size > 504 { c.current_frame_size = 504 } // Limit for immediate ldp/stp
 	
 	c.text_section += '\tstp x29, x30, [sp, #-${c.current_frame_size}]!\n'
 	c.text_section += '\tmov x29, sp\n'
@@ -158,6 +148,29 @@ fn (mut c AsmArm64Macos) generate_function(func ast.Function) {
 	c.text_section += '\tmov sp, x29\n'
 	c.text_section += '\tldp x29, x30, [sp], #${c.current_frame_size}\n'
 	c.text_section += '\tret\n\n'
+}
+
+fn (c &AsmArm64Macos) calculate_block_stack(block ast.Block) int {
+	mut size := 0
+	for stmt in block.statements {
+		if stmt is ast.LetStmt {
+			size += 8
+			if stmt.value is ast.StructLiteral { size += stmt.value.values.len * 8 }
+			if stmt.value is ast.ArrayLiteral { size += stmt.value.elements.len * 8 }
+		} else if stmt is ast.IfStmt {
+			size += c.calculate_block_stack(stmt.consequence)
+			size += c.calculate_block_stack(stmt.alternative)
+		} else if stmt is ast.WhileStmt {
+			size += c.calculate_block_stack(stmt.body)
+		} else if stmt is ast.ForStmt {
+			size += 8 // for loop var
+			size += c.calculate_block_stack(stmt.body)
+		} else if stmt is ast.ExprStmt {
+			if stmt.expr is ast.StructLiteral { size += stmt.expr.values.len * 8 }
+			if stmt.expr is ast.ArrayLiteral { size += stmt.expr.elements.len * 8 }
+		}
+	}
+	return size
 }
 
 fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {

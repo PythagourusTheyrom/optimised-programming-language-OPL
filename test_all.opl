@@ -46,6 +46,12 @@ fn main() {
     // 6. Test Concurrency with Argument
     spawn thread_func("SUCCESS: THREAD SPAWNED WITH ARG");
     
+    // 7. Small delay to allow thread to print
+    let j = 0
+    while j < 1000000 {
+        j = j + 1
+    }
+    
     println("--- VALIDATION COMPLETE: OPL IS FULLY OPERATIONAL ---");
 }
 
