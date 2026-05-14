@@ -184,6 +184,7 @@ let active = true       // bool
 let score = 0
 score = score + 10
 println(score)  // 10
+
 ```
 
 ## Types
