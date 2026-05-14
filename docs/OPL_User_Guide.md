@@ -57,8 +57,8 @@ Before installing OPL, ensure you have the following:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/opl-lang/opl
-cd opl
+git clone https://github.com/PythagourusTheyrom/optimised-programming-language-OPL
+cd optimised-programming-language-OPL
 
 # 2. Build the compiler with V
 v .
@@ -129,10 +129,10 @@ opl build main.opl --backend=c
 
 ```bash
 # Initialise a new module
-opl init
+./opl init
 
 # Download a package from GitHub
-opl get myusername/mypackage
+./opl get myusername/mypackage
 # Packages are installed to ./opl_modules/
 ```
 
