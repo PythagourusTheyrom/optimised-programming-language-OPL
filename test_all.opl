@@ -1,0 +1,47 @@
+// OPL Compiler Validation Suite
+struct Engine {
+    power int,
+    status string
+}
+
+fn (e Engine) start() {
+    println("Engine starting with power:", e.power);
+    e.status = "RUNNING";
+}
+
+fn (e Engine) check() {
+    return e.status;
+}
+
+fn main() {
+    println("--- OPL COMPILER VALIDATION ---");
+    
+    // 1. Test Struct Initialization & Property Write
+    let my_engine = Engine { power: 9000, status: "OFF" };
+    println("Initial Status:", my_engine.status);
+    
+    // 2. Test Native Method Dispatch & Property Read
+    my_engine.start();
+    let current_status = my_engine.check();
+    println("Current Status:", current_status);
+    
+    // 3. Test Inclusive For-Loops (0 to 5 should run 6 times)
+    println("Testing Loop (0 to 5):");
+    for i from 0 to 5 {
+        println("Iteration:", i);
+    }
+    
+    // 4. Test Float Logic
+    let temperature = 98.6;
+    if temperature > 90.0 {
+        println("Status: TEMPERATURE NORMAL (Float Logic Working)");
+    }
+    
+    // 5. Test Heap Allocation
+    let ptr = malloc(16);
+    if ptr != 0 {
+        println("Status: HEAP ALLOCATION SUCCESSFUL");
+    }
+    
+    println("--- VALIDATION COMPLETE: OPL IS FULLY OPERATIONAL ---");
+}

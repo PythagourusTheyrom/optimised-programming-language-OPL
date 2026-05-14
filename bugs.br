@@ -1,0 +1,100 @@
+
+1:
+bug: C Backend Expression Incompleteness
+state: Critical
+issue: codegen/codegen.v only handles a fraction of expression types. Missing: StructLiteral, ArrayLiteral, MethodCall, PropertyAccess, IndexExpr, BoolLit.
+
+2:
+bug: C Backend Missing ReturnStmt
+state: High
+issue: The C backend has no case for ReturnStmt in compile_statement — all functions silently return without a value.
+
+3:
+bug: C Backend Println Format Mismatch
+state: Medium
+issue: The C backend defaults to '%d' for all identifiers/infix expressions, producing wrong output or crashes for floats and strings.
+
+4:
+bug: OPM Command Injection
+state: Critical
+issue: opl.v uses os.system() with raw user input from args[2], allowing arbitrary shell command injection (e.g. `opl get 'pkg; rm -rf /'`).
+
+5:
+bug: Incomplete Target Check in Main
+state: Medium
+issue: opl.v only checks for macOS/native, failing to correctly route to x86_64 backends when --target=linux is passed on a non-Linux host.
+
+6:
+bug: ASM Filename Collision
+state: Low
+issue: opl.v replaces '.opl' with '.s' silently, potentially overwriting a handwritten assembly file with the same name.
+
+7:
+bug: Hardcoded Clang Linker
+state: Low
+issue: opl.v hardcodes 'clang' for linking, blocking use on systems where only GCC or MSVC is available.
+
+8:
+bug: x86 Linux — Method Call Name Collision
+state: Medium
+issue: The x86 backend uses bare method names as call targets, unlike ARM64's `Type_method` prefixing. Causes linker errors for same-named methods on different structs.
+
+9:
+bug: x86 Linux — Stack Pointer Leak in SpawnStmt
+state: High
+issue: The x86 backend's SpawnStmt does manual stack manipulation that can misalign the stack if interrupted or called recursively.
+
+10:
+bug: x86 Linux — Array Index Hardcoded to 8 Bytes
+state: High
+issue: The x86 backend hardcodes 8-byte element size for all array indexing, breaking access for 16-byte structs like Token.
+
+11:
+bug: x86 Linux — Missing BoolLit Handler
+state: Medium
+issue: The x86 backend has no case for BoolLit in generate_expression. Boolean literals are unusable on this platform.
+
+12:
+bug: Unchecked Scanf Input Length
+state: Medium
+issue: The input() built-in uses '%s' in scanf without a length limit, leaving a stack buffer overflow vulnerability.
+
+13:
+bug: Panic on Failed Package Fetch
+state: Low
+issue: opl.v uses os.system for git clone with no fine-grained error handling — a failed fetch can leave OPM state corrupted.
+
+14:
+bug: Hardcoded "Engine" Struct Type (ARM64)
+state: High
+issue: In backend_arm64_mac.v (line 311 and 490), the struct type defaults to "Engine" if it cannot be resolved. This causes incorrect offset calculations for all other struct types.
+
+15:
+bug: Missing Float Comparisons (ARM64)
+state: Medium
+issue: The float operation branch in ARM64 backend only handles arithmetic (+, -, *, /). Comparisons like '==' or '<' on floats fall through to the integer 'cmp' branch, which uses the wrong registers (x0 instead of d0).
+
+16:
+bug: Unsafe Cast in Property Assignment (ARM64)
+state: High
+issue: Line 325 still uses (expr.left.object as ast.Ident), which will cause the compiler to crash if a property is assigned on the result of a function call or complex expression.
+
+17:
+bug: Missing Float Printing in Println (ARM64)
+state: Medium
+issue: The ARM64 println handler only supports string and integer formats. Printing a floating-point variable will result in garbage output or %lld interpretation of the bit pattern.
+
+18:
+bug: Inconsistent Stack Frame Size
+state: Medium
+issue: The ARM64 backend uses 256 for function prologues but 512 for others, and sometimes manually adjusts sp by 16 in helper functions, leading to potential misalignment or overlap in deeply nested calls.
+
+19:
+bug: Missing Property Type Validation
+state: Medium
+issue: The compiler assumes all struct properties are 8 bytes (pointers or ints). If a struct contains a smaller type (once supported) or a sub-struct, property access will calculate the wrong address.
+
+20:
+bug: Deadlock in Joined Thread Spawn
+state: Low
+issue: The x86 backend calls pthread_join immediately after pthread_create (line 103), effectively making the spawn synchronous and negating all benefits of concurrency.

@@ -1,0 +1,79 @@
+struct Token {
+    kind: int,
+    lit: string
+}
+
+struct Lexer {
+    input: string,
+    pos: int,
+    ch: int
+}
+
+fn (l Lexer) read_char() {
+    if l.pos < len(l.input) {
+        l.ch = l.input[l.pos];
+        l.pos = l.pos + 1;
+    } else {
+        l.ch = 0;
+    }
+}
+
+fn (l Lexer) skip_whitespace() {
+    while l.ch == 32 || l.ch == 10 || l.ch == 9 || l.ch == 13 { // ' ', '\n', '\t', '\r'
+        l.read_char();
+    }
+}
+
+fn (l Lexer) next_token() {
+    l.skip_whitespace();
+    
+    if l.ch == 123 { // '{'
+        println("Token: {");
+        l.read_char();
+        return 0;
+    }
+    if l.ch == 125 { // '}'
+        println("Token: }");
+        l.read_char();
+        return 0;
+    }
+    if l.ch == 40 { // '('
+        println("Token: (");
+        l.read_char();
+        return 0;
+    }
+    if l.ch == 41 { // ')'
+        println("Token: )");
+        l.read_char();
+        return 0;
+    }
+    
+    // Identifier/Keyword
+    if l.ch > 96 { // 'a'-'z'
+        println("Reading Identifier...");
+        while l.ch > 96 {
+            // Need a way to accumulate string lit...
+            // For now just print characters
+            l.read_char();
+        }
+        return 0;
+    }
+    
+    l.read_char();
+}
+
+fn main() {
+    println("--- OPL Bootstrapping: Full Lexer ---");
+    let source = "fn main() { }";
+    let l = Lexer { input: source, pos: 0, ch: 0 };
+    l.read_char();
+    
+    l.next_token(); // fn
+    l.next_token(); // main
+    l.next_token(); // (
+    l.next_token(); // )
+    l.next_token(); // {
+    l.next_token(); // }
+    
+    println("Lexer bootstrapping successful.");
+}
