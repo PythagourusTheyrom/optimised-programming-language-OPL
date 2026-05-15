@@ -491,6 +491,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 					else { 'eq' }
 				}
 				c.text_section += '\tcset x0, $cond\n'
+				c.text_section += '\tfmov d0, #0.0\n' // Bug 10: Clear d0 after comparison
 			}
 		} else {
 			c.generate_expression(expr.left)
@@ -518,11 +519,12 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				} else {
 					c.text_section += '\tcset x0, ge\n'
 				}
-			} else if expr.op == '==' {
+			} else if expr.op == '==' || expr.op == '!=' {
 				c.text_section += '\tcmp x1, x0\n'
-				c.text_section += '\tcset x0, eq\n'
-			} else if expr.op == '!=' {
-				c.text_section += '\tcmp x1, x0\n'
+				cond := if expr.op == '==' { 'eq' } else { 'ne' }
+				c.text_section += '\tcset x0, $cond\n'
+				c.text_section += '\tfmov d0, #0.0\n' // Bug 10: Clear d0
+			}
 				c.text_section += '\tcset x0, ne\n'
 			}
 		}
