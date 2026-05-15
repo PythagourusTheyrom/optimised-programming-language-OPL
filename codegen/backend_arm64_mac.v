@@ -552,8 +552,17 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tldrb w0, [x0]\n' // Load single byte
 			c.text_section += '\tsxtw x0, w0\n'
 		} else {
-			// Standardize to 8-byte scaling for pointers/ints
-			c.text_section += '\tmov x2, #8\n' 
+			// Bug 11: Implement struct size scaling for array load
+			mut element_size := 8
+			if expr.left is ast.Ident {
+				if expr.left.value in c.var_types {
+					stype := c.var_types[expr.left.value]
+					if stype in c.struct_fields {
+						element_size = c.struct_fields[stype].len * 8
+					}
+				}
+			}
+			c.text_section += '\tmov x2, #$element_size\n' 
 			c.text_section += '\tmul x0, x0, x2\n'
 			c.text_section += '\tadd x0, x1, x0\n'
 		}
@@ -641,7 +650,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 	} else if expr is ast.PrefixExpr {
 		c.generate_expression(expr.right)
 		if expr.op == '!' {
-			// Bug 13: Check both x0 and d0 for logical NOT
+			// Bug 9: Check both integer and float registers for logical NOT
 			c.text_section += '\tcmp x0, #0\n'
 			c.text_section += '\tcset x1, ne\n'
 			c.text_section += '\tfcmp d0, #0.0\n'
@@ -722,18 +731,33 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tadd x0, x0, fmt_nl@PAGEOFF\n'
 			c.text_section += '\tbl _printf\n' // sp is already aligned here
 		} else if expr.function.value == 'input' {
-			// Fix Bug 12: Use malloc for input buffer to prevent stack escape
-			c.text_section += '\tmov x0, #64\n'
+			// Bug 18: Increase buffer size to 256 bytes
+			c.text_section += '\tmov x0, #256\n'
 			c.text_section += '\tbl _malloc\n'
+			// Bug 12: Check if malloc succeeded
+			c.text_section += '\tcmp x0, #0\n'
+			c.text_section += '\tb.eq .L_input_fail_${c.label_count}\n'
+			
 			c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer addr
 			if !c.data_section.contains('fmt_input:') {
-				c.data_section += 'fmt_input: .asciz "%63s"\n'
+				c.data_section += 'fmt_input: .asciz "%255s"\n'
 			}
 			c.text_section += '\tadrp x0, fmt_input@PAGE\n'
 			c.text_section += '\tadd x0, x0, fmt_input@PAGEOFF\n'
 			c.text_section += '\tldr x1, [sp]\n' // buffer address into x1
 			c.text_section += '\tbl _scanf\n'
 			c.text_section += '\tldr x0, [sp], #16\n' // result is the buffer pointer
+			c.text_section += '\tb .L_input_end_${c.label_count}\n'
+			c.text_section += '.L_input_fail_${c.label_count}:\n'
+			c.text_section += '\tmov x0, #0\n'
+			c.text_section += '.L_input_end_${c.label_count}:\n'
+			c.label_count++
+		} else if expr.function.value == 'free' {
+			// Bug 5: Add free() built-in
+			c.generate_expression(expr.args[0])
+			c.text_section += '\tsub sp, sp, #16\n'
+			c.text_section += '\tbl _free\n'
+			c.text_section += '\tadd sp, sp, #16\n'
 		} else if expr.function.value == 'malloc' {
 			c.generate_expression(expr.args[0])
 			c.text_section += '\tsub sp, sp, #16\n'
