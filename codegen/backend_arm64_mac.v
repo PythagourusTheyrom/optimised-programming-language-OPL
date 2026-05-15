@@ -351,6 +351,17 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			println("Compilation Error: Unknown variable '${expr.value}'")
 			exit(1)
 		}
+	} else if expr is ast.StringLit {
+		str_label := 'str_${c.str_count}'
+		c.str_count++
+		if !c.data_section.contains('.align 3') {
+			c.data_section += '.align 3\n'
+		}
+		// Strip quotes for assembly
+		val := expr.value.trim('"')
+		c.data_section += '$str_label: .asciz "$val"\n'
+		c.text_section += '\tadrp x0, $str_label@PAGE\n'
+		c.text_section += '\tadd x0, x0, $str_label@PAGEOFF\n'
 	} else if expr is ast.FloatLit {
 		label := 'float_${c.str_count}'
 		c.str_count++
@@ -360,22 +371,6 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 		c.data_section += '$label: .double $expr.value\n'
 		c.text_section += '\tadrp x0, $label@PAGE\n'
 		c.text_section += '\tadd x0, x0, $label@PAGEOFF\n'
-		c.text_section += '\tldr d0, [x0]\n'
-		str_label := 'str_${c.str_count}'
-		c.str_count++
-		c.data_section += '.align 3\n'
-		// Strip quotes for assembly
-		val := expr.value.trim('"')
-		c.data_section += '$str_label: .asciz "$val"\n'
-		c.text_section += '\tadrp x0, $str_label@PAGE\n'
-		c.text_section += '\tadd x0, x0, $str_label@PAGEOFF\n'
-	} else if expr is ast.FloatLit {
-		str_label := 'float_${c.str_count}'
-		c.str_count++
-		// Embed float bits in data section
-		c.data_section += '.align 3\n$str_label: .double ${expr.value}\n'
-		c.text_section += '\tadrp x0, $str_label@PAGE\n'
-		c.text_section += '\tadd x0, x0, $str_label@PAGEOFF\n'
 		c.text_section += '\tldr d0, [x0]\n'
 	} else if expr is ast.InfixExpr {
 		if expr.op == '=' {
