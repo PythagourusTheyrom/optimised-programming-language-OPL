@@ -172,9 +172,9 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 					c.c_code += 'printf("%lld", (long long)' 
 				}
 				c.compile_expression(arg)
-				c.c_code += '); if ($i < ${expr.args.len - 1}) printf(" ");'
+				c.c_code += '); if (i < ${expr.args.len - 1}) printf(" ");'
 			}
-			c.c_code += ' printf("\\n")'
+			c.c_code += ' printf("\\n");'
 		} else if expr.function.value == 'input' {
 			c.c_code += '({ char* buf = malloc(256); scanf("%255s", buf); buf; })'
 		} else if expr.function.value == 'malloc' {
@@ -221,6 +221,16 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 		c.c_code += ')['
 		c.compile_expression(expr.index)
 		c.c_code += '])'
+	} else if expr is ast.MethodCall {
+		c.compile_expression(expr.object)
+		c.c_code += '->${expr.method.value}('
+		for i, arg in expr.args {
+			c.compile_expression(arg)
+			if i < expr.args.len - 1 {
+				c.c_code += ', '
+			}
+		}
+		c.c_code += ')'
 	} else if expr is ast.BoolLit {
 		c.c_code += if expr.value { '1' } else { '0' }
 	} else if expr is ast.StringLit {
