@@ -147,12 +147,14 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 		if expr.function.value == 'println' {
 			if expr.args.len > 0 {
 				arg := expr.args[0]
-				if arg is ast.IntegerLit || arg is ast.InfixExpr {
-					c.c_code += 'printf("%d\\n", '
-				} else if arg is ast.Ident {
-					c.c_code += 'printf("%d\\n", ' 
-				} else {
+				// Better type detection for C backend println
+				if arg is ast.StringLit {
 					c.c_code += 'printf("%s\\n", '
+				} else if arg is ast.FloatLit {
+					c.c_code += 'printf("%f\\n", '
+				} else {
+					// Default to long long for ints and other variables
+					c.c_code += 'printf("%lld\\n", (long long)' 
 				}
 				c.compile_expression(arg)
 				c.c_code += ')'

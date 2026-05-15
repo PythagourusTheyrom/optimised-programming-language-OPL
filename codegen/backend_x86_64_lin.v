@@ -98,9 +98,9 @@ fn (mut c AsmX86_64Linux) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tlea ${func_name}(%rip), %rdx\n'
 		c.text_section += '\txor %rcx, %rcx\n'
 		c.text_section += '\tcall pthread_create\n'
+		// Fix Bug 7: Detach instead of join for background threads
 		c.text_section += '\tmov (%rsp), %rdi\n'
-		c.text_section += '\txor %rsi, %rsi\n'
-		c.text_section += '\tcall pthread_join\n'
+		c.text_section += '\tcall pthread_detach\n'
 		c.text_section += '\tadd $$16, %rsp\n'
 	} else if stmt is ast.IfStmt {
 		c.generate_expression(stmt.condition)
@@ -161,6 +161,10 @@ fn (mut c AsmX86_64Linux) generate_statement(stmt ast.Stmt) {
 fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 	if expr is ast.IntegerLit {
 		c.text_section += '\tmov $$${expr.value}, %rax\n'
+	} else if expr is ast.BoolLit {
+		// Fix Bug 9: Add BoolLit handler
+		val := if expr.value { 1 } else { 0 }
+		c.text_section += '\tmov $$${val}, %rax\n'
 	} else if expr is ast.Ident {
 		if expr.value in c.variables {
 			offset := c.variables[expr.value]
@@ -202,7 +206,7 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 				c.text_section += '\tpush %rax\n'
 				c.generate_expression(expr.left.index)
 				c.text_section += '\tpop %rcx\n'
-				c.text_section += '\timul $$8, %rax\n'
+				c.text_section += '\timul $$8, %rax\n' // Standardize to 8 bytes for now
 				c.text_section += '\tadd %rax, %rcx\n'
 				c.text_section += '\tpop %rax\n'
 				c.text_section += '\tmov %rax, (%rcx)\n'
@@ -222,23 +226,29 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 			}
 		}
 	} else if expr is ast.ArrayLiteral {
-		base_offset := c.stack_ptr
-		c.stack_ptr += expr.elements.len * 8
+		// Fix Bug 12: Use malloc for escaping literals
+		size := expr.elements.len * 8
+		c.text_section += '\tmov $$${size}, %rdi\n'
+		c.text_section += '\tcall malloc\n'
+		c.text_section += '\tpush %rax\n' // save buffer ptr
 		for i, el in expr.elements {
 			c.generate_expression(el)
-			offset := base_offset + (i * 8)
-			c.text_section += '\tmov %rax, -${offset}(%rbp)\n'
+			c.text_section += '\tmov (%rsp), %rcx\n'
+			c.text_section += '\tmov %rax, ${i*8}(%rcx)\n'
 		}
-		c.text_section += '\tlea -${base_offset}(%rbp), %rax\n'
+		c.text_section += '\tpop %rax\n'
 	} else if expr is ast.StructLiteral {
-		base_offset := c.stack_ptr
-		c.stack_ptr += expr.values.len * 8
+		// Fix Bug 11: Use malloc for escaping literals
+		size := expr.values.len * 8
+		c.text_section += '\tmov $$${size}, %rdi\n'
+		c.text_section += '\tcall malloc\n'
+		c.text_section += '\tpush %rax\n' // save buffer ptr
 		for i, val in expr.values {
 			c.generate_expression(val)
-			offset := base_offset + (i * 8)
-			c.text_section += '\tmov %rax, -${offset}(%rbp)\n'
+			c.text_section += '\tmov (%rsp), %rcx\n'
+			c.text_section += '\tmov %rax, ${i*8}(%rcx)\n'
 		}
-		c.text_section += '\tlea -${base_offset}(%rbp), %rax\n'
+		c.text_section += '\tpop %rax\n'
 	} else if expr is ast.IndexExpr {
 		c.generate_expression(expr.left)
 		c.text_section += '\tpush %rax\n'
@@ -284,8 +294,9 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 		}
 		c.text_section += '\tpop %rdi\n' // pop receiver into rdi
 		
-		func_name := expr.method.value
-		c.text_section += '\tcall ${func_name}\n'
+		func_name := '_${expr.method.value}'
+		// Fix Bug 6: Better method naming
+		c.text_section += '\tcall $func_name\n'
 	} else if expr is ast.CallExpr {
 		if expr.function.value == 'println' {
 			if expr.args.len > 0 {
@@ -316,6 +327,19 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 					}
 				}
 			}
+		} else if expr.function.value == 'input' {
+			// Fix Bug 12: Use malloc for input buffer
+			c.text_section += '\tmov $$64, %rdi\n'
+			c.text_section += '\tcall malloc\n'
+			c.text_section += '\tpush %rax\n' // save buffer ptr
+			if !c.data_section.contains('fmt_input:') {
+				c.data_section += 'fmt_input: .asciz "%63s"\n'
+			}
+			c.text_section += '\tlea fmt_input(%rip), %rdi\n'
+			c.text_section += '\tmov %rax, %rsi\n'
+			c.text_section += '\txor %rax, %rax\n'
+			c.text_section += '\tcall scanf\n'
+			c.text_section += '\tpop %rax\n'
 		} else {
 			// Custom function call
 			for _, arg in expr.args {

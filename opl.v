@@ -117,7 +117,14 @@ fn main() {
 			println('Using ASM Backend for target: $target')
 			mut asm_code := ''
 			
-			if target == 'arm64-macos' || target == 'native' {
+			if target == 'native' {
+				user_os := os.user_os()
+				if user_os == 'macos' { target = 'arm64-macos' }
+				else if user_os == 'linux' { target = 'x86_64-linux' }
+				else if user_os == 'windows' { target = 'x86_64-windows' }
+			}
+
+			if target == 'arm64-macos' {
 				mut asm_gen := codegen.new_arm64_macos()
 				asm_code = asm_gen.generate(program)
 			} else if target == 'x86_64-linux' {
@@ -135,9 +142,11 @@ fn main() {
 			os.write_file(asm_filename, asm_code) or { panic(err) }
 			println('Generated ASM Code: $asm_filename')
 			
-			// Build with clang/gcc
+			// Build with available linker (CC env var, clang, or gcc)
 			exe_name := filepath.replace('.opl', '')
-			cmd := 'clang -o $exe_name $asm_filename'
+			cc := os.getenv('CC')
+			linker := if cc != '' { cc } else if os.exists_in_system_path('clang') { 'clang' } else { 'gcc' }
+			cmd := '$linker -o $exe_name $asm_filename'
 			res := os.execute(cmd)
 			if res.exit_code == 0 {
 				println('Successfully built to executable: ./$exe_name')

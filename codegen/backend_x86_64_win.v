@@ -162,6 +162,7 @@ fn (mut c AsmX86_64Windows) generate_expression(expr ast.Expr) {
 		else if expr.op == '<' { c.text_section += '\tcmp %rax, %rcx\n\tsetl %al\n\tmovzbq %al, %rax\n' } 
 		else if expr.op == '>' { c.text_section += '\tcmp %rax, %rcx\n\tsetg %al\n\tmovzbq %al, %rax\n' } 
 		else if expr.op == '==' { c.text_section += '\tcmp %rax, %rcx\n\tsete %al\n\tmovzbq %al, %rax\n' }
+		else if expr.op == '!=' { c.text_section += '\tcmp %rax, %rcx\n\tsetne %al\n\tmovzbq %al, %rax\n' }
 		else if expr.op == '=' {
 			if expr.left is ast.Ident {
 				offset := c.variables[expr.left.value]
@@ -193,23 +194,29 @@ fn (mut c AsmX86_64Windows) generate_expression(expr ast.Expr) {
 			}
 		}
 	} else if expr is ast.ArrayLiteral {
-		base_offset := c.stack_ptr
-		c.stack_ptr += expr.elements.len * 8
+		// Fix Bug 12: Use malloc for escaping literals
+		size := expr.elements.len * 8
+		c.text_section += '\tmov $$${size}, %rcx\n'
+		c.text_section += '\tcall malloc\n'
+		c.text_section += '\tpush %rax\n'
 		for i, el in expr.elements {
 			c.generate_expression(el)
-			offset := base_offset + (i * 8)
-			c.text_section += '\tmov %rax, -${offset}(%rbp)\n'
+			c.text_section += '\tmov (%rsp), %rcx\n'
+			c.text_section += '\tmov %rax, ${i*8}(%rcx)\n'
 		}
-		c.text_section += '\tlea -${base_offset}(%rbp), %rax\n'
+		c.text_section += '\tpop %rax\n'
 	} else if expr is ast.StructLiteral {
-		base_offset := c.stack_ptr
-		c.stack_ptr += expr.values.len * 8
+		// Fix Bug 11: Use malloc for escaping literals
+		size := expr.values.len * 8
+		c.text_section += '\tmov $$${size}, %rcx\n'
+		c.text_section += '\tcall malloc\n'
+		c.text_section += '\tpush %rax\n'
 		for i, val in expr.values {
 			c.generate_expression(val)
-			offset := base_offset + (i * 8)
-			c.text_section += '\tmov %rax, -${offset}(%rbp)\n'
+			c.text_section += '\tmov (%rsp), %rcx\n'
+			c.text_section += '\tmov %rax, ${i*8}(%rcx)\n'
 		}
-		c.text_section += '\tlea -${base_offset}(%rbp), %rax\n'
+		c.text_section += '\tpop %rax\n'
 	} else if expr is ast.IndexExpr {
 		c.generate_expression(expr.left)
 		c.text_section += '\tpush %rax\n'
