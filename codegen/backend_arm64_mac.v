@@ -384,7 +384,15 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				c.text_section += '\tstr x0, [sp, #-16]!\n'
 				c.generate_expression(expr.left.index)
 				c.text_section += '\tldr x1, [sp], #16\n'
-				c.text_section += '\tmov x2, #8\n' // Standardize to 8-byte scaling for now
+				// Bug 6: Implement struct size scaling for IndexExpr assignment
+				mut element_size := 8
+				if expr.left.left is ast.Ident {
+					if c.var_types[expr.left.left.value] in c.struct_fields {
+						stype := c.var_types[expr.left.left.value]
+						element_size = c.struct_fields[stype].len * 8
+					}
+				}
+				c.text_section += '\tmov x2, #$element_size\n'
 				c.text_section += '\tmul x0, x0, x2\n'
 				c.text_section += '\tadd x1, x1, x0\n'
 				c.text_section += '\tldr x0, [sp], #16\n'
