@@ -507,11 +507,9 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				c.text_section += '\tmul x0, x1, x0\n'
 			} else if expr.op == '<' || expr.op == '<=' {
 				c.text_section += '\tcmp x1, x0\n'
-				if expr.op == '<' {
-					c.text_section += '\tcset x0, lt\n'
-				} else {
-					c.text_section += '\tcset x0, le\n'
-				}
+				cond := if expr.op == '<' { 'lt' } else { 'le' }
+				c.text_section += '\tcset x0, $cond\n'
+				c.text_section += '\tfmov d0, #0.0\n'
 			} else if expr.op == '>' || expr.op == '>=' {
 				c.text_section += '\tcmp x1, x0\n'
 				if expr.op == '>' {
