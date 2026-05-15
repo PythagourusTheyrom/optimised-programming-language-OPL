@@ -329,20 +329,38 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tstr x0, [x29, #$offset]\n'
 		c.text_section += '\tb .L_for_cond_$l_count\n'
 		c.text_section += '.L_for_end_$l_count:\n'
+	} else if stmt is ast.ReturnStmt {
+		c.generate_expression(stmt.value)
+		// Safe stack restoration: mov sp, x29 to drop all temporary stack pushes
+		c.text_section += '\tmov sp, x29\n'
+		c.text_section += '\tldp x29, x30, [sp], #${c.current_frame_size}\n'
+		c.text_section += '\tret\n'
 	} else if stmt is ast.ExprStmt {
 		c.generate_expression(stmt.expr)
 	}
 }
 
+fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
+	if expr is ast.IntegerLit {
+		c.text_section += '\tmov x0, #$expr.value\n'
+	} else if expr is ast.Ident {
+		if expr.value in c.variables {
+			offset := c.variables[expr.value]
+			c.text_section += '\tldr x0, [x29, #$offset]\n'
+		} else {
+			println("Compilation Error: Unknown variable '${expr.value}'")
+			exit(1)
+		}
 	} else if expr is ast.FloatLit {
 		label := 'float_${c.str_count}'
 		c.str_count++
-		// Bug 15: Use a dedicated section or check for existing alignment
 		if !c.data_section.contains('.align 3') {
 			c.data_section += '.align 3\n'
 		}
 		c.data_section += '$label: .double $expr.value\n'
 		c.text_section += '\tadrp x0, $label@PAGE\n'
+		c.text_section += '\tadd x0, x0, $label@PAGEOFF\n'
+		c.text_section += '\tldr d0, [x0]\n'
 		str_label := 'str_${c.str_count}'
 		c.str_count++
 		c.data_section += '.align 3\n'
