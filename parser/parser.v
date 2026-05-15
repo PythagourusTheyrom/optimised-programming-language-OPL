@@ -28,15 +28,10 @@ pub fn (mut p Parser) parse_program() ast.Program {
 	mut program := ast.Program{}
 	for p.cur_tok.kind != .eof {
 		if p.cur_tok.kind == .kw_fn || p.cur_tok.kind == .kw_gpu {
-			f := p.parse_function()
-			println("Parsed function: ${f.name}")
-			program.functions << f
+			program.functions << p.parse_function()
 		} else if p.cur_tok.kind == .kw_struct {
-			s := p.parse_struct()
-			println("Parsed struct: ${s.name.value}")
-			program.structs << s
+			program.structs << p.parse_struct()
 		} else {
-			println("Skipping token: ${p.cur_tok.kind} '${p.cur_tok.lit}'")
 			p.next_token()
 		}
 	}
@@ -232,10 +227,6 @@ fn (mut p Parser) parse_primary_expression() ast.Expr {
 	if p.cur_tok.kind == .eof {
 		println("Unexpected EOF during parsing")
 		exit(1)
-	}
-	
-	if p.cur_tok.kind != .string_lit && p.cur_tok.kind != .number && p.cur_tok.kind != .ident && p.cur_tok.kind != .lbracket && p.cur_tok.kind != .kw_true && p.cur_tok.kind != .kw_false && p.cur_tok.kind != .bang && p.cur_tok.kind != .minus {
-		println("Parser Error: Unexpected token ${p.cur_tok.kind} '${p.cur_tok.lit}' at line ${p.cur_tok.line}")
 	}
 	
 	if p.cur_tok.kind == .string_lit {

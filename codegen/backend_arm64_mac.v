@@ -298,7 +298,7 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.generate_expression(stmt.value)
 		// Safe stack restoration: mov sp, x29 to drop all temporary stack pushes
 		c.text_section += '\tmov sp, x29\n'
-		c.text_section += '\tldp x29, x30, [sp], #256\n'
+		c.text_section += '\tldp x29, x30, [sp], #${c.current_frame_size}\n'
 		c.text_section += '\tret\n'
 	} else if stmt is ast.ExprStmt {
 		c.generate_expression(stmt.expr)
