@@ -67,10 +67,11 @@ pub:
 
 pub struct ForStmt {
 pub:
-	var_name Ident
-	start    Expr
-	end      Expr
-	body     Block
+	var_name     Ident
+	start        Expr
+	end          Expr
+	is_inclusive bool
+	body         Block
 }
 
 pub struct Ident {
