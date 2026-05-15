@@ -228,6 +228,9 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tldr x3, [sp, #16]\n'
 		
 		c.text_section += '\tbl _pthread_create\n'
+		// Fix Bug 19: Detach the thread to avoid resource leaks
+		c.text_section += '\tldr x0, [sp]\n' // load thread handle back (at bottom of stack)
+		c.text_section += '\tbl _pthread_detach\n'
 		c.text_section += '\tadd sp, sp, #32\n' // Pop both thread_id and arg
 	} else if stmt is ast.IfStmt {
 		c.generate_expression(stmt.condition)
@@ -345,7 +348,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				c.text_section += '\tstr x0, [sp, #-16]!\n'
 				c.generate_expression(expr.left.index)
 				c.text_section += '\tldr x1, [sp], #16\n'
-				c.text_section += '\tmov x2, #8\n'
+				c.text_section += '\tmov x2, #8\n' // Standardize to 8-byte scaling for now
 				c.text_section += '\tmul x0, x0, x2\n'
 				c.text_section += '\tadd x1, x1, x0\n'
 				c.text_section += '\tldr x0, [sp], #16\n'
@@ -360,6 +363,10 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 					if expr.left.object.value in c.var_types {
 						stype = c.var_types[expr.left.object.value]
 					}
+				} else if expr.left.object is ast.CallExpr {
+					// HACK: for bootstrapping OPL, assume some common return types
+					if expr.left.object.function.value == 'new_token' { stype = 'Token' }
+					if expr.left.object.function.value == 'new_parser' { stype = 'Parser' }
 				}
 				
 				c.generate_expression(expr.left.object) // x0 = base address
@@ -368,9 +375,8 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				if is_ptr {
 					c.text_section += '\tadd x1, x0, #$offset\n'
 				} else {
-					obj_offset := c.variables[(expr.left.object as ast.Ident).value]
-					c.text_section += '\tldr x1, [x29, #$obj_offset]\n'
-					c.text_section += '\tadd x1, x1, #$offset\n'
+					// Fix Bug 16: Safe address calculation for any object
+					c.text_section += '\tadd x1, x0, #$offset\n'
 				}
 				
 				c.text_section += '\tldr x0, [sp], #16\n' // pop value -> x0
@@ -403,6 +409,19 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				c.text_section += '\tfmul d0, d1, d0\n'
 			} else if expr.op == '/' {
 				c.text_section += '\tfdiv d0, d1, d0\n'
+			} else if expr.op == '==' || expr.op == '!=' || expr.op == '<' || expr.op == '<=' || expr.op == '>' || expr.op == '>=' {
+				// Bug 15: Float comparisons
+				c.text_section += '\tfcmp d1, d0\n'
+				cond := match expr.op {
+					'==' { 'eq' }
+					'!=' { 'ne' }
+					'<'  { 'mi' }
+					'<=' { 'ls' }
+					'>'  { 'gt' } // Careful with NaNs, but for OPL this is fine
+					'>=' { 'ge' }
+					else { 'eq' }
+				}
+				c.text_section += '\tcset x0, $cond\n'
 			}
 		} else {
 			c.generate_expression(expr.left)
@@ -490,10 +509,8 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tldrb w0, [x0]\n' // Load single byte
 			c.text_section += '\tsxtw x0, w0\n'
 		} else {
-			// Dynamic struct size detection for array indexing
-			// In a real compiler, we would look up the element type size here.
-			// For bootstrapping OPL, we'll assume 16-byte structs for Token/Parser
-			c.text_section += '\tmov x2, #16\n' 
+			// Standardize to 8-byte scaling for pointers/ints
+			c.text_section += '\tmov x2, #8\n' 
 			c.text_section += '\tmul x0, x0, x2\n'
 			c.text_section += '\tadd x0, x1, x0\n'
 		}
@@ -553,6 +570,9 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			if expr.object.value in c.var_types {
 				stype = c.var_types[expr.object.value]
 			}
+		} else if expr.object is ast.CallExpr {
+			if expr.object.function.value == 'new_token' { stype = 'Token' }
+			if expr.object.function.value == 'new_parser' { stype = 'Parser' }
 		}
 		
 		mut offset := c.struct_offsets['${stype}_${expr.property.value}'] * 8
@@ -605,15 +625,36 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 					c.text_section += '\tbl _printf\n'
 					c.text_section += '\tadd sp, sp, #16\n'         // Restore sp
 				} else {
-					if !c.data_section.contains('fmt_int:') {
-						c.data_section += '.align 3\nfmt_int: .asciz "%lld "\n'
+					mut is_float := false
+					if arg is ast.FloatLit { is_float = true }
+					else if arg is ast.Ident {
+						if arg.value in c.var_types {
+							if c.var_types[arg.value] == 'float' { is_float = true }
+						}
 					}
-					c.text_section += '\tstp x0, xzr, [sp, #-16]!\n'
-					c.text_section += '\tadrp x0, fmt_int@PAGE\n'
-					c.text_section += '\tadd x0, x0, fmt_int@PAGEOFF\n'
-					c.text_section += '\tldr x1, [sp]\n'
-					c.text_section += '\tbl _printf\n'
-					c.text_section += '\tadd sp, sp, #16\n'
+					
+					if is_float {
+						if !c.data_section.contains('fmt_float:') {
+							c.data_section += '.align 3\nfmt_float: .asciz "%f "\n'
+						}
+						c.text_section += '\tsub sp, sp, #16\n'
+						c.text_section += '\tstr d0, [sp]\n' // d0 already has the float
+						c.text_section += '\tadrp x0, fmt_float@PAGE\n'
+						c.text_section += '\tadd x0, x0, fmt_float@PAGEOFF\n'
+						c.text_section += '\tldr d0, [sp]\n' // printf expects double in d0
+						c.text_section += '\tbl _printf\n'
+						c.text_section += '\tadd sp, sp, #16\n'
+					} else {
+						if !c.data_section.contains('fmt_int:') {
+							c.data_section += '.align 3\nfmt_int: .asciz "%lld "\n'
+						}
+						c.text_section += '\tstp x0, xzr, [sp, #-16]!\n'
+						c.text_section += '\tadrp x0, fmt_int@PAGE\n'
+						c.text_section += '\tadd x0, x0, fmt_int@PAGEOFF\n'
+						c.text_section += '\tldr x1, [sp]\n'
+						c.text_section += '\tbl _printf\n'
+						c.text_section += '\tadd sp, sp, #16\n'
+					}
 				}
 			}
 			// Print newline
@@ -630,7 +671,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tadd x0, x29, #$buffer_offset\n'
 			c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer addr
 			if !c.data_section.contains('fmt_input:') {
-				c.data_section += 'fmt_input: .asciz "%s"\n'
+				c.data_section += 'fmt_input: .asciz "%63s"\n' // Fix Bug 12: Limit input length
 			}
 			c.text_section += '\tadrp x0, fmt_input@PAGE\n'
 			c.text_section += '\tadd x0, x0, fmt_input@PAGEOFF\n'
@@ -650,12 +691,53 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			// x0 has path. Call fopen(path, "r")
 			c.text_section += '\tstr x0, [sp, #-16]!\n'
 			if !c.data_section.contains('mode_r:') {
-				c.data_section += 'mode_r: .asciz "r"\n'
+				c.data_section += '.align 3\nmode_r: .asciz "r"\n'
 			}
 			c.text_section += '\tadrp x1, mode_r@PAGE\n'
 			c.text_section += '\tadd x1, x1, mode_r@PAGEOFF\n'
 			c.text_section += '\tbl _fopen\n'
-			c.text_section += '\t; fopen result in x0\n'
+			c.text_section += '\t; fopen result in x0. Save it.\n'
+			c.text_section += '\tstr x0, [sp], #16\n' // replace path with FILE*
+			c.text_section += '\tstr x0, [sp, #-16]!\n'
+			
+			// Get file size: fseek(fp, 0, SEEK_END), ftell(fp), fseek(fp, 0, SEEK_SET)
+			c.text_section += '\tmov x1, #0\n'
+			c.text_section += '\tmov x2, #2\n' // SEEK_END
+			c.text_section += '\tbl _fseek\n'
+			c.text_section += '\tldr x0, [sp]\n'
+			c.text_section += '\tbl _ftell\n'
+			c.text_section += '\tstr x0, [sp, #-16]!\n' // save size
+			
+			c.text_section += '\tldr x0, [sp, #16]\n' // load fp
+			c.text_section += '\tmov x1, #0\n'
+			c.text_section += '\tmov x2, #0\n' // SEEK_SET
+			c.text_section += '\tbl _fseek\n'
+			
+			// Malloc buffer: malloc(size + 1)
+			c.text_section += '\tldr x0, [sp]\n' // load size
+			c.text_section += '\tadd x0, x0, #1\n'
+			c.text_section += '\tbl _malloc\n'
+			c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer ptr
+			
+			// Read: fread(buffer, 1, size, fp)
+			c.text_section += '\tldr x0, [sp]\n' // buffer
+			c.text_section += '\tmov x1, #1\n' // size
+			c.text_section += '\tldr x2, [sp, #16]\n' // count (file size)
+			c.text_section += '\tldr x3, [sp, #32]\n' // fp
+			c.text_section += '\tbl _fread\n'
+			
+			// Null terminate: buffer[size] = 0
+			c.text_section += '\tldr x0, [sp]\n' // buffer
+			c.text_section += '\tldr x1, [sp, #16]\n' // size
+			c.text_section += '\tstrb wzr, [x0, x1]\n'
+			
+			// Close: fclose(fp)
+			c.text_section += '\tldr x0, [sp, #32]\n' // fp
+			c.text_section += '\tbl _fclose\n'
+			
+			// Result is the buffer pointer
+			c.text_section += '\tldr x0, [sp]\n'
+			c.text_section += '\tadd sp, sp, #48\n' // cleanup fp, size, buffer
 		} else if expr.function.value == 'len' {
 			arg := expr.args[0]
 			if arg is ast.ArrayLiteral {

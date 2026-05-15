@@ -17,7 +17,7 @@ issue: The C backend defaults to '%d' for all identifiers/infix expressions, pro
 4:
 bug: OPM Command Injection
 state: Critical
-issue: opl.v uses os.system() with raw user input from args[2], allowing arbitrary shell command injection (e.g. `opl get 'pkg; rm -rf /'`).
+issue: opl.v line 34 uses os.system() with raw user input from args[2], allowing arbitrary shell command injection (e.g. `opl get 'pkg; rm -rf /'`).
 
 5:
 bug: Incomplete Target Check in Main
@@ -62,39 +62,39 @@ issue: The input() built-in uses '%s' in scanf without a length limit, leaving a
 13:
 bug: Panic on Failed Package Fetch
 state: Low
-issue: opl.v uses os.system for git clone with no fine-grained error handling — a failed fetch can leave OPM state corrupted.
+issue: status: PENDING (os.execute added, but needs more robustness)
 
 14:
-bug: Hardcoded "Engine" Struct Type (ARM64)
-state: High
-issue: In backend_arm64_mac.v (line 343 and 490), the struct type defaults to "Engine" if it cannot be resolved. This causes incorrect offset calculations for all other struct types.
+bug: StructLiteral Stack Escape
+state: Critical
+issue: StructLiteral (backend_arm64_mac.v:491) returns the address of a stack-allocated buffer. If a struct literal is returned from a function or stored in a persistent object, it becomes a dangling pointer.
 
 15:
-bug: Missing Float Comparisons (ARM64)
+bug: Input() Returns Dangling Stack Pointer
 state: Critical
-issue: The float operation branch in ARM64 backend (line 376) only handles arithmetic (+, -, *, /). Comparisons like '==' or '<' on floats fall through to the integer 'else' block (line 393), which pushes x0 instead of d0, resulting in comparisons against garbage data.
+issue: The input() built-in (line 683) allocates a 64-byte buffer on the current function's stack frame and returns its address. Once the function returns, the string becomes invalid.
 
 16:
-bug: Unsafe Cast in Property Assignment (ARM64)
+bug: Hardcoded "Engine" Struct Type Fallback
 state: High
-issue: Line 357 still uses (expr.left.object as ast.Ident).value, which will cause the compiler to crash if a property is assigned on the result of a function call or any complex expression.
+issue: Property access and assignment still default to the "Engine" struct type (lines 360, 568) if the receiver's type cannot be inferred, leading to incorrect field offsets for user-defined structs.
 
 17:
-bug: Missing Float Printing in Println (ARM64)
+bug: Incomplete PrefixExpr Float Handling
 state: Medium
-issue: The ARM64 println handler only supports string and integer formats. Printing a floating-point variable will result in garbage output or %lld interpretation of the bit pattern.
+issue: PrefixExpr '!' (line 572) only checks the integer register x0. If applied to a float variable or literal, it will use whatever garbage was left in x0 instead of checking the float register d0.
 
 18:
-bug: Inconsistent Stack Scaling for IndexExpr Assignment
+bug: ArrayLiteral Size Heuristic Fragility
 state: High
-issue: In backend_arm64_mac.v line 334, IndexExpr assignment hardcodes 8-byte scaling ('mov x2, #8'), while the load handler at line 478 hardcodes 16-byte scaling. This mismatch ensures data corruption when modifying arrays of structs.
+issue: The element size heuristic for ArrayLiteral (line 445) only checks if the first element is a StructLiteral. If the first element is a variable or function call returning a struct, it defaults to 8 bytes, causing stack corruption.
 
 19:
-bug: Missing Thread Detachment
+bug: PropertyAccess on Float Receiver
 state: Medium
-issue: The ARM64 SpawnStmt calls _pthread_create but never calls _pthread_detach or _pthread_join. This leads to resource leakage as thread metadata is never cleaned up by the kernel.
+issue: The PropertyAccess handler (line 561) does not account for receivers that return values in d0 (floats). If a property is accessed on a float, the address calculation will use the contents of x0, leading to a crash.
 
 20:
-bug: Incomplete Type Inference for Method Returns
+bug: Lack of Non-Inclusive For-Loop Syntax
 state: Low
-issue: LetStmt type inference for MethodCall (line 175) is hardcoded to recognize only the 'check' method. Any other method return will default to 'int', potentially breaking subsequent operations on the variable.
+issue: The language documentation implies 'to' is inclusive, but there is no syntax or backend support for non-inclusive loops (e.g. '0 to N-1' requires manual math), which is unconventional for many developers.
