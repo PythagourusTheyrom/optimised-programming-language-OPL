@@ -242,12 +242,16 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tbl _pthread_detach\n'
 		c.text_section += '\tadd sp, sp, #32\n' // Pop both thread_id and arg
 	} else if stmt is ast.IfStmt {
+		// Bug 16/4: Zero registers before condition to avoid state corruption from previous stmts
+		c.text_section += '\tmov x0, #0\n'
+		c.text_section += '\tfmov d0, #0.0\n'
 		c.generate_expression(stmt.condition)
+		
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
 		c.text_section += '\tcmp x0, #0\n'
-		c.text_section += '\tcset x1, ne\n' // x1 = (x0 != 0)
+		c.text_section += '\tcset x1, ne\n'
 		c.text_section += '\tfcmp d0, #0.0\n'
-		c.text_section += '\tcset x2, ne\n' // x2 = (d0 != 0.0)
+		c.text_section += '\tcset x2, ne\n'
 		c.text_section += '\torr x0, x1, x2\n'
 		c.text_section += '\tcmp x0, #0\n'
 		l_count := c.label_count
@@ -268,7 +272,12 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		l_count := c.label_count
 		c.label_count++
 		c.text_section += '.L_while_cond_$l_count:\n'
+		
+		// Bug 16/4: Zero registers before condition
+		c.text_section += '\tmov x0, #0\n'
+		c.text_section += '\tfmov d0, #0.0\n'
 		c.generate_expression(stmt.condition)
+		
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
 		c.text_section += '\tcmp x0, #0\n'
 		c.text_section += '\tcset x1, ne\n'
@@ -731,6 +740,9 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tbl _malloc\n'
 			c.text_section += '\tadd sp, sp, #16\n'
 		} else if expr.function.value == 'read_file' {
+			l_count := c.label_count
+			c.label_count++
+			
 			c.generate_expression(expr.args[0])
 			// x0 has path. Call fopen(path, "r")
 			c.text_section += '\tstr x0, [sp, #-16]!\n'
@@ -742,11 +754,20 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tbl _fopen\n'
 			// Fix Bug 17: Check for NULL pointer from fopen
 			c.text_section += '\tcmp x0, #0\n'
-			c.text_section += '\tb.ne .L_fopen_success_${c.label_count}\n'
+			c.text_section += '\tb.ne .L_fopen_success_$l_count\n'
+			
+			// Optional: print error message for Bug 16
+			if !c.data_section.contains('fmt_file_err:') {
+				c.data_section += 'fmt_file_err: .asciz "Error: Could not open file\\n"\n'
+			}
+			c.text_section += '\tadrp x0, fmt_file_err@PAGE\n'
+			c.text_section += '\tadd x0, x0, fmt_file_err@PAGEOFF\n'
+			c.text_section += '\tbl _printf\n'
+			
 			c.text_section += '\tmov x0, #0\n' // Return NULL on failure
 			c.text_section += '\tadd sp, sp, #16\n' // Clean up stack slot
-			c.text_section += '\tb .L_fopen_end_${c.label_count}\n'
-			c.text_section += '.L_fopen_success_${c.label_count}:\n'
+			c.text_section += '\tb .L_fopen_end_$l_count\n'
+			c.text_section += '.L_fopen_success_$l_count:\n'
 			c.text_section += '\t; fopen result in x0. Save it.\n'
 			c.text_section += '\tstr x0, [sp], #16\n' // replace path with FILE*
 			c.text_section += '\tstr x0, [sp, #-16]!\n'
@@ -789,8 +810,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			// Result is the buffer pointer
 			c.text_section += '\tldr x0, [sp]\n'
 			c.text_section += '\tadd sp, sp, #48\n' // cleanup fp, size, buffer
-			c.text_section += '.L_fopen_end_${c.label_count}:\n'
-			c.label_count++
+			c.text_section += '.L_fopen_end_$l_count:\n'
 		} else if expr.function.value == 'len' {
 			arg := expr.args[0]
 			if arg is ast.ArrayLiteral {
