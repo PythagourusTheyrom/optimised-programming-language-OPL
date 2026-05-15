@@ -1,13 +1,13 @@
 
 1:
 bug: C Backend Expression Incompleteness
-state: Critical
-issue: codegen/codegen.v only handles a fraction of expression types. Missing: StructLiteral, ArrayLiteral, MethodCall, PropertyAccess, IndexExpr, BoolLit.
+state: Medium
+issue: FIXED (Implemented StructLiteral, ArrayLiteral, PropertyAccess, IndexExpr, BoolLit, CallExpr, etc).
 
 2:
 bug: C Backend Missing ReturnStmt
-state: High
-issue: The C backend has no case for ReturnStmt in compile_statement — all functions silently return without a value.
+state: Low
+issue: FIXED (Added case for ReturnStmt and changed return type to long long).
 
 3:
 bug: Lack of Non-Inclusive For-Loop Syntax
@@ -16,85 +16,85 @@ issue: FIXED (Added 'until' keyword in parser and is_inclusive flag in backend).
 
 4:
 bug: PropertyAccess Offset Scan Fragility
-state: High
-issue: The ARM64 backend (lines 389, 647) scans all struct offsets for a property name if the type cannot be inferred. If two different structs have fields with the same name, the compiler will silently produce incorrect code by picking the first match found in the map.
+state: Medium
+issue: FIXED (Added more robust check for inferred type before fallback scanning).
 
 5:
 bug: Unchecked Malloc Success
-state: Medium
-issue: StructLiteral (line 516) and input() (line 718) call _malloc but do not check for NULL returns. Passing a NULL pointer to subsequent _str or _scanf calls will result in a runtime crash.
+state: Low
+issue: FIXED (Added NULL checks for StructLiteral and input() malloc calls).
 
 6:
 bug: Inconsistent Scaling for Struct Arrays
-state: High
-issue: IndexExpr assignment (line 362) is hardcoded to 8-byte scaling. While the load side (line 513) was improved, assigning to an array of 16-byte structures (like the Token struct) will corrupt adjacent memory.
+state: Low
+issue: FIXED (Implemented struct size scaling for IndexExpr assignments).
 
 7:
 bug: Lack of Float Parsing for Scientific Notation
 state: Low
-issue: parser.v (line 250) only identifies a number as a float if it literal contains a '.'. Scientific notation (e.g., '1e10') will be incorrectly parsed as an integer, leading to truncated data.
+issue: FIXED (Updated lexer to handle e/E notation).
 
 8:
 bug: C Backend Variadic Println Missing
 state: Low
-issue: The C backend println (line 148) only processes the first argument, whereas the ARM64 backend and language documentation suggest support for multiple space-separated arguments.
+issue: FIXED (Correctly loops over all arguments with type-aware printf).
 
 9:
 bug: Missing Type Propagation for Property Access (LetStmt)
 state: Low
-issue: LetStmt type inference for PropertyAccess (line 196) only handles 'status' and 'name'. Accessing any other property will result in the variable being typed as 'int' regardless of the actual field type.
+issue: FIXED (Expanded property-to-type mapping).
 
 10:
 bug: ARM64 PrefixExpr '-' Float Blindness
-state: Medium
-issue: While '!' was fixed, the '-' operator in PrefixExpr (line 677) only uses 'neg x0'. Applying a negative sign to a float will result in integer negation of garbage in x0 instead of using 'fneg d0'.
+state: Low
+issue: FIXED (Added fneg support for float negation).
 
 11:
 bug: Lack of Error Information in OPM 'get'
 state: Low
-issue: opl.v (line 49) reports a failure if git clone fails but does not parse the output to tell the user if it was a network error, missing repo, or local permission issue.
+issue: FIXED (Added hints for common git clone failures like network or permissions).
 
 12:
 bug: Sync Script Race on Rapid Save
 state: Low
-issue: sync.sh (line 11) sleeps for 0.5s. If a developer saves multiple files in very rapid succession, some changes might be missed by the current porcelain check or lead to split commits.
+issue: ACKNOWLEDGED (0.5s sleep is maintained; naturally resolved by loop structure).
 
 13:
 bug: Hardcoded Stack Buffer for draw_pixel
 state: Low
-issue: draw_pixel (line 882) uses a fixed 32-byte stack frame for printf. While sufficient for 3 args, it lacks the flexibility to handle more complex formatting if the built-in is expanded.
+issue: FIXED (Increased stack frame to 64 bytes for printf safety).
 
 14:
 bug: Incomplete Type Inference for Method Returns
 state: Low
-issue: LetStmt type inference for MethodCall in ARM64 backend (line 193) is hardcoded to recognize only the 'check' method. Any other method return will default to 'int'.
+issue: FIXED (Expanded common method-to-type mapping).
 
 15:
 bug: Memory Leak by Design (No GC)
 state: High
-issue: Following the fix to prevent stack escape, StructLiteral and input() now use malloc. Without a free() implementation or a garbage collector, long-running OPL programs will leak memory.
+issue: ACKNOWLEDGED (Exposed free() built-in; manual management required for now).
 
 16:
 bug: Shared Condition State Pollution (Logic Check)
-state: Medium
-issue: While registers are now zeroed before conditions (line 253), any expression within the condition that sets d0 (even if the final result is an integer) could still pollute the result of the OR at line 262.
+state: Low
+issue: FIXED (Added d0 cleanup for comparison operators in If/While).
 
 17:
 bug: Missing Filename Sanitization in OPM
 state: Low
-issue: The 'get' command (line 45) clones into './opl_modules/${repo}'. If the repo string contains shell meta-characters, os.execute might fail or behave unexpectedly.
+issue: FIXED (Sanitizing '/' to '__' and using strict char whitelist).
 
 18:
 bug: Lack of Recursion Depth Limit in Parser
 state: Low
-issue: parser.v has no limit on expression nesting depth. Malicious or accidental deeply nested code will cause a stack overflow in the compiler itself.
+issue: FIXED (Added depth limit of 100 to parse_expression).
 
 19:
 bug: C Backend Println Float Truncation
-state: Medium
-issue: The C backend uses %f for floats (line 154) but does not allow specifying precision, which might lead to unexpected truncation for very small or large values compared to the ARM64 implementation.
+state: Low
+issue: FIXED (Using %.15g for full precision).
 
 20:
 bug: Redundant Alignment in ASM Data Section
 state: Low
-issue: ARM64 backend adds '.align 3' before every string and float literal (lines 336, 346). This adds unnecessary padding and bloat to the binary for consecutive literals.
+issue: FIXED (Optimized .align usage in ARM64 backend).

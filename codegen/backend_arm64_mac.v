@@ -251,10 +251,17 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tbl _pthread_detach\n'
 		c.text_section += '\tadd sp, sp, #32\n' // Pop both thread_id and arg
 	} else if stmt is ast.IfStmt {
-		// Bug 16/4: Zero registers before condition to avoid state corruption from previous stmts
+		// Bug 16/4: Zero registers before condition
 		c.text_section += '\tmov x0, #0\n'
 		c.text_section += '\tfmov d0, #0.0\n'
 		c.generate_expression(stmt.condition)
+		
+		// Bug 16: If it was a comparison, d0 is irrelevant and potentially polluting
+		if stmt.condition is ast.InfixExpr {
+			if stmt.condition.op in ['==', '!=', '<', '<=', '>', '>='] {
+				c.text_section += '\tfmov d0, #0.0\n'
+			}
+		}
 		
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
 		c.text_section += '\tcmp x0, #0\n'
@@ -286,6 +293,13 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tmov x0, #0\n'
 		c.text_section += '\tfmov d0, #0.0\n'
 		c.generate_expression(stmt.condition)
+		
+		// Bug 16: If it was a comparison, d0 is irrelevant
+		if stmt.condition is ast.InfixExpr {
+			if stmt.condition.op in ['==', '!=', '<', '<=', '>', '>='] {
+				c.text_section += '\tfmov d0, #0.0\n'
+			}
+		}
 		
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
 		c.text_section += '\tcmp x0, #0\n'
@@ -906,12 +920,13 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tldr x2, [sp], #16\n' // y
 			c.text_section += '\tldr x1, [sp], #16\n' // x
 			
-			c.text_section += '\tsub sp, sp, #32\n'
+			// Bug 13: Increase stack buffer for draw_pixel printf
+			c.text_section += '\tsub sp, sp, #64\n' 
 			c.text_section += '\tstr x1, [sp]\n'
 			c.text_section += '\tstr x2, [sp, #8]\n'
 			c.text_section += '\tstr x3, [sp, #16]\n'
 			c.text_section += '\tbl _printf\n'
-			c.text_section += '\tadd sp, sp, #32\n'
+			c.text_section += '\tadd sp, sp, #64\n'
 		} else if expr.function.value == 'exit' {
 			if expr.args.len > 0 {
 				c.generate_expression(expr.args[0])
