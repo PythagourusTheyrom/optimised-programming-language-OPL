@@ -198,15 +198,29 @@ fn (mut p Parser) parse_statement() ast.Stmt {
 		p.next_token() // skip 'for'
 		var_name := p.cur_tok.lit
 		p.next_token() // skip var name
-		if p.cur_tok.lit != "from" {
+		if p.cur_tok.kind != .kw_from {
 			println("Error: Expected 'from' in for-loop, got '${p.cur_tok.lit}'")
 		}
 		p.next_token() // skip 'from'
 		start := p.parse_expression()
-		p.next_token() // skip 'to' (implied)
+		
+		mut is_inclusive := true
+		if p.cur_tok.kind == .kw_until {
+			is_inclusive = false
+		} else if p.cur_tok.kind != .kw_to {
+			// fallback/legacy check
+		}
+		
+		p.next_token() // skip 'to' or 'until'
 		end := p.parse_expression()
 		body := p.parse_block()
-		return ast.ForStmt{var_name: ast.Ident{value: var_name}, start: start, end: end, body: body}
+		return ast.ForStmt{
+			var_name: ast.Ident{value: var_name},
+			start: start,
+			end: end,
+			is_inclusive: is_inclusive,
+			body: body
+		}
 	} else {
 		expr := p.parse_expression()
 		// Always ensure we move past the last token of the expression
