@@ -329,12 +329,6 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.text_section += '\tstr x0, [x29, #$offset]\n'
 		c.text_section += '\tb .L_for_cond_$l_count\n'
 		c.text_section += '.L_for_end_$l_count:\n'
-	} else if stmt is ast.ReturnStmt {
-		c.generate_expression(stmt.value)
-		// Safe stack restoration: mov sp, x29 to drop all temporary stack pushes
-		c.text_section += '\tmov sp, x29\n'
-		c.text_section += '\tldp x29, x30, [sp], #${c.current_frame_size}\n'
-		c.text_section += '\tret\n'
 	} else if stmt is ast.ExprStmt {
 		c.generate_expression(stmt.expr)
 	}
