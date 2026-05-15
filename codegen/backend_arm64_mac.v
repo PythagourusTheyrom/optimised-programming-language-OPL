@@ -370,7 +370,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 	} else if expr is ast.StringLit {
 		str_label := 'str_${c.str_count}'
 		c.str_count++
-		// Bug 20: Only align if not already aligned (strings might misalign)
+		// Bug 20: Strings can misalign subsequent labels
 		c.data_section += '.align 3\n'
 		// Strip quotes for assembly
 		val := expr.value.trim('"')
@@ -380,8 +380,8 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 	} else if expr is ast.FloatLit {
 		label := 'float_${c.str_count}'
 		c.str_count++
-		// Bug 20: Doubles are 8-byte aligned, but strings might have come before
-		if !c.data_section.contains('.align 3') {
+		// Bug 20: Only align if necessary (e.g. following a string)
+		if c.data_section.ends_with('"\n') {
 			c.data_section += '.align 3\n'
 		}
 		c.data_section += '$label: .double $expr.value\n'
