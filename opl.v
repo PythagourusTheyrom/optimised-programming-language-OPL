@@ -42,9 +42,11 @@ fn main() {
 		}
 		println("OPM: Fetching package ${repo}...")
 		os.mkdir_all('./opl_modules') or { }
-		res_clone := os.execute("git clone https://github.com/${repo} ./opl_modules/${repo}")
+		// Bug 20: Sanitize repo name for folder to avoid shell issues and nested dirs
+		folder_name := repo.replace('/', '__')
+		res_clone := os.execute("git clone https://github.com/${repo} ./opl_modules/${folder_name}")
 		if res_clone.exit_code == 0 {
-			println("Package ${repo} installed successfully.")
+			println("Package ${repo} installed successfully in ./opl_modules/${folder_name}")
 		} else {
 			println("Error: Failed to fetch package ${repo}.")
 			println(res_clone.output)
