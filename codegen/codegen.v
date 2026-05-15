@@ -167,7 +167,7 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 				if arg is ast.StringLit {
 					c.c_code += 'printf("%s", '
 				} else if arg is ast.FloatLit {
-					c.c_code += 'printf("%f", '
+					c.c_code += 'printf("%.15g", '
 				} else {
 					c.c_code += 'printf("%lld", (long long)' 
 				}
