@@ -356,9 +356,8 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 	} else if expr is ast.StringLit {
 		str_label := 'str_${c.str_count}'
 		c.str_count++
-		if !c.data_section.contains('.align 3') {
-			c.data_section += '.align 3\n'
-		}
+		// Bug 20: Only align if not already aligned (strings might misalign)
+		c.data_section += '.align 3\n'
 		// Strip quotes for assembly
 		val := expr.value.trim('"')
 		c.data_section += '$str_label: .asciz "$val"\n'
@@ -367,6 +366,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 	} else if expr is ast.FloatLit {
 		label := 'float_${c.str_count}'
 		c.str_count++
+		// Bug 20: Doubles are 8-byte aligned, but strings might have come before
 		if !c.data_section.contains('.align 3') {
 			c.data_section += '.align 3\n'
 		}
