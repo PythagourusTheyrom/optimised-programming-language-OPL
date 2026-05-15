@@ -80,6 +80,8 @@ fn (mut c AsmX86_64Linux) generate_statement(stmt ast.Stmt) {
 		c.generate_expression(stmt.expr)
 	} else if stmt is ast.ReturnStmt {
 		c.generate_expression(stmt.value)
+		// Bug 13: Handle float returns in x86_64 Linux (return via xmm0)
+		c.text_section += '\tmovq %rax, %xmm0\n'
 		c.text_section += '\tmov %rbp, %rsp\n'
 		c.text_section += '\tpop %rbp\n'
 		c.text_section += '\tret\n'
