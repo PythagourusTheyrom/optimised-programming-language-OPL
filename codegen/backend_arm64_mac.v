@@ -512,11 +512,9 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				c.text_section += '\tfmov d0, #0.0\n'
 			} else if expr.op == '>' || expr.op == '>=' {
 				c.text_section += '\tcmp x1, x0\n'
-				if expr.op == '>' {
-					c.text_section += '\tcset x0, gt\n'
-				} else {
-					c.text_section += '\tcset x0, ge\n'
-				}
+				cond := if expr.op == '>' { 'gt' } else { 'ge' }
+				c.text_section += '\tcset x0, $cond\n'
+				c.text_section += '\tfmov d0, #0.0\n'
 			} else if expr.op == '==' || expr.op == '!=' {
 				c.text_section += '\tcmp x1, x0\n'
 				cond := if expr.op == '==' { 'eq' } else { 'ne' }
