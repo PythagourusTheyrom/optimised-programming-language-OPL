@@ -186,6 +186,7 @@ fn lookup_ident(ident string) TokenKind {
 		'struct' { .kw_struct }
 		'from' { .kw_from }
 		'to' { .kw_to }
+		'until' { .kw_until }
 		'true' { .kw_true }
 		'false' { .kw_false }
 		else { .ident }
