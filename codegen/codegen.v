@@ -172,9 +172,19 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 					c.c_code += 'printf("%lld", (long long)' 
 				}
 				c.compile_expression(arg)
-				c.c_code += '); printf(" ");'
+				c.c_code += '); if ($i < ${expr.args.len - 1}) printf(" ");'
 			}
 			c.c_code += ' printf("\\n")'
+		} else if expr.function.value == 'input' {
+			c.c_code += '({ char* buf = malloc(256); scanf("%255s", buf); buf; })'
+		} else if expr.function.value == 'malloc' {
+			c.c_code += 'malloc('
+			c.compile_expression(expr.args[0])
+			c.c_code += ')'
+		} else if expr.function.value == 'free' {
+			c.c_code += 'free('
+			c.compile_expression(expr.args[0])
+			c.c_code += ')'
 		} else {
 			c.c_code += '${expr.function.value}('
 			for i, arg in expr.args {
@@ -185,6 +195,36 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 			}
 			c.c_code += ')'
 		}
+	} else if expr is ast.StructLiteral {
+		c.c_code += '({ ${expr.name.value}* _s = malloc(sizeof(${expr.name.value})); '
+		for i, val in expr.values {
+			field_name := expr.fields[i].value
+			c.c_code += '_s->$field_name = '
+			c.compile_expression(val)
+			c.c_code += '; '
+		}
+		c.c_code += '_s; })'
+	} else if expr is ast.ArrayLiteral {
+		c.c_code += '({ void** _a = malloc(${expr.elements.len} * 8); '
+		for i, el in expr.elements {
+			c.c_code += '_a[$i] = (void*)'
+			c.compile_expression(el)
+			c.c_code += '; '
+		}
+		c.c_code += '_a; })'
+	} else if expr is ast.PropertyAccess {
+		c.compile_expression(expr.object)
+		c.c_code += '->${expr.property.value}'
+	} else if expr is ast.IndexExpr {
+		c.c_code += '(('
+		c.compile_expression(expr.left)
+		c.c_code += ')['
+		c.compile_expression(expr.index)
+		c.c_code += '])'
+	} else if expr is ast.BoolLit {
+		c.c_code += if expr.value { '1' } else { '0' }
+	} else if expr is ast.StringLit {
+		c.c_code += '"$expr.value"'
 	}
 }
 
