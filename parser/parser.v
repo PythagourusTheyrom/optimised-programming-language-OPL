@@ -255,10 +255,11 @@ fn (mut p Parser) parse_primary_expression() ast.Expr {
 		left = ast.StringLit{value: p.cur_tok.lit}
 		p.next_token()
 	} else if p.cur_tok.kind == .number {
-		if p.cur_tok.lit.contains('.') {
-			left = ast.FloatLit{value: p.cur_tok.lit.f64()}
+		lit := p.cur_tok.lit
+		if lit.contains('.') || lit.contains('e') || lit.contains('E') {
+			left = ast.FloatLit{value: lit.f64()}
 		} else {
-			left = ast.IntegerLit{value: p.cur_tok.lit.int()}
+			left = ast.IntegerLit{value: lit.int()}
 		}
 		p.next_token()
 	} else if p.cur_tok.kind == .kw_true {
