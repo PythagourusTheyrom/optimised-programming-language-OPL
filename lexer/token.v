@@ -34,6 +34,7 @@ pub enum TokenKind {
 	kw_for
 	kw_from
 	kw_to
+	kw_until
 	eq
 	not_eq
 	lt
@@ -51,6 +52,15 @@ pub:
 	lit  string
 	line int
 	col  int
+}
+
+pub struct ForStmt {
+pub:
+	var_name     Token
+	start        Expr
+	end          Expr
+	is_inclusive bool
+	body         Block
 }
 
 pub fn (t Token) str() string {
