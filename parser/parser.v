@@ -8,6 +8,7 @@ mut:
 	l         &lexer.Lexer
 	cur_tok   lexer.Token
 	peek_tok  lexer.Token
+	depth     int
 }
 
 pub fn new(mut l lexer.Lexer) &Parser {
@@ -232,7 +233,14 @@ fn (mut p Parser) parse_statement() ast.Stmt {
 }
 
 fn (mut p Parser) parse_expression() ast.Expr {
-	return p.parse_infix_expression(p.parse_primary_expression(), 0)
+	p.depth++
+	if p.depth > 100 {
+		println("Parser Error: Maximum expression depth exceeded at line $p.cur_tok.line")
+		exit(1)
+	}
+	res := p.parse_infix_expression(p.parse_primary_expression(), 0)
+	p.depth--
+	return res
 }
 
 fn (mut p Parser) parse_primary_expression() ast.Expr {
