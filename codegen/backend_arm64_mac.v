@@ -415,10 +415,10 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				
 				c.generate_expression(expr.left.object) // x0 = base address
 				
-				// Fix Bug 18: More robust struct offset lookup
-				offset_key := '${stype}_${expr.left.property.value}'
+				// Fix Bug 4: More robust struct offset lookup
+				mut offset_key := '${stype}_${expr.left.property.value}'
 				if offset_key !in c.struct_offsets {
-					// Last ditch effort: scan all structs for this property
+					// Fallback scan (brittle)
 					for k, v in c.struct_offsets {
 						if k.ends_with('_${expr.left.property.value}') {
 							offset_key = k
@@ -428,13 +428,7 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				}
 				offset := c.struct_offsets[offset_key] * 8
 				
-				if is_ptr {
-					c.text_section += '\tadd x1, x0, #$offset\n'
-				} else {
-					// Fix Bug 16: Safe address calculation for any object
-					c.text_section += '\tadd x1, x0, #$offset\n'
-				}
-				
+				c.text_section += '\tadd x1, x0, #$offset\n'
 				c.text_section += '\tldr x0, [sp], #16\n' // pop value -> x0
 				c.text_section += '\tstr x0, [x1]\n'
 			}
@@ -543,12 +537,16 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 		}
 		c.text_section += '\tadd x0, x29, #$base_offset\n'
 	} else if expr is ast.StructLiteral {
-		// Fix Bug 11: Use malloc for struct literals to prevent stack escape
+		l_count := c.label_count
+		c.label_count++
+		// Bug 5: Check malloc success for struct literals
 		size := expr.values.len * 8
 		c.text_section += '\tmov x0, #$size\n'
 		c.text_section += '\tbl _malloc\n'
-		c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer ptr
+		c.text_section += '\tcmp x0, #0\n'
+		c.text_section += '\tb.eq .L_struct_fail_$l_count\n'
 		
+		c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer ptr
 		for i, val in expr.values {
 			c.generate_expression(val)
 			c.text_section += '\tldr x1, [sp]\n' // load buffer ptr
@@ -556,6 +554,10 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tstr x0, [x1, #$offset]\n'
 		}
 		c.text_section += '\tldr x0, [sp], #16\n' // pop buffer ptr to x0
+		c.text_section += '\tb .L_struct_end_$l_count\n'
+		c.text_section += '.L_struct_fail_$l_count:\n'
+		c.text_section += '\tmov x0, #0\n'
+		c.text_section += '.L_struct_end_$l_count:\n'
 	} else if expr is ast.IndexExpr {
 		c.generate_expression(expr.left)
 		c.text_section += '\tstr x0, [sp, #-16]!\n'
@@ -683,7 +685,22 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tcmp x0, #0\n'
 			c.text_section += '\tcset x0, eq\n'
 		} else if expr.op == '-' {
+			// Bug 10: Handle float negation
+			c.text_section += '\tfcmp d0, #0.0\n'
+			c.text_section += '\tcset x1, ne\n'
+			c.text_section += '\tcmp x0, #0\n'
+			c.text_section += '\tcset x2, ne\n'
+			c.text_section += '\torr x0, x1, x2\n'
+			c.text_section += '\tcmp x0, #0\n'
+			
+			l_count := c.label_count
+			c.label_count++
+			c.text_section += '\tb.eq .L_neg_int_$l_count\n'
+			c.text_section += '\tfneg d0, d0\n'
+			c.text_section += '\tb .L_neg_end_$l_count\n'
+			c.text_section += '.L_neg_int_$l_count:\n'
 			c.text_section += '\tneg x0, x0\n'
+			c.text_section += '.L_neg_end_$l_count:\n'
 		}
 	} else if expr is ast.CallExpr {
 		if expr.function.value == 'println' {
