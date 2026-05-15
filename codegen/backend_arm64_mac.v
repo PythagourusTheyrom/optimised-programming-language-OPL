@@ -309,19 +309,16 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.label_count++
 		c.text_section += '.L_for_cond_$l_count:\n'
 		c.text_section += '\tldr x0, [x29, #$offset]\n'
-	} else if stmt is ast.ReturnStmt {
-		c.generate_expression(stmt.value)
-		// Bug 13: Handle float returns in x86_64 Linux (return via xmm0)
-		// For now, if we don't have type info, we just copy rax to xmm0 as well
-		c.text_section += '\tmovq %rax, %xmm0\n'
-		c.text_section += '\tmov %rbp, %rsp\n'
-		c.text_section += '\tpop %rbp\n'
-		c.text_section += '\tret\n'
 		c.text_section += '\tstr x0, [sp, #-16]!\n'
 		c.generate_expression(stmt.end)
 		c.text_section += '\tldr x1, [sp], #16\n'
 		c.text_section += '\tcmp x1, x0\n'
-		c.text_section += '\tb.gt .L_for_end_$l_count\n'
+		
+		if stmt.is_inclusive {
+			c.text_section += '\tb.gt .L_for_end_$l_count\n'
+		} else {
+			c.text_section += '\tb.ge .L_for_end_$l_count\n'
+		}
 		
 		for s in stmt.body.statements {
 			c.generate_statement(s)
