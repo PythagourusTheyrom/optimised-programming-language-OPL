@@ -1,33 +1,33 @@
 
 1:
 bug: C Backend Expression Incompleteness
-state: Medium
-issue: FIXED (Implemented StructLiteral, ArrayLiteral, MethodCall, PropertyAccess, IndexExpr, BoolLit).
+state: Critical
+issue: codegen/codegen.v only handles a fraction of expression types. Missing: StructLiteral, ArrayLiteral, MethodCall, PropertyAccess, IndexExpr, BoolLit.
 
 2:
 bug: C Backend Missing ReturnStmt
-state: Low
-issue: FIXED (ReturnStmt implemented, functions return long long).
+state: High
+issue: The C backend has no case for ReturnStmt in compile_statement — all functions silently return without a value.
 
 3:
 bug: Lack of Non-Inclusive For-Loop Syntax
 state: Low
-issue: FIXED (Added 'until' keyword support).
+issue: FIXED (Added 'until' keyword in parser and is_inclusive flag in backend).
 
 4:
 bug: PropertyAccess Offset Scan Fragility
-state: Medium
-issue: FIXED (Added check for inferred struct type before fallback scanning).
+state: High
+issue: The ARM64 backend (lines 437, 780) scans all struct offsets for a property name if the type cannot be inferred. If two different structs have fields with the same name, the compiler will silently produce incorrect code by picking the first match found in the map.
 
 5:
 bug: Unchecked Malloc Success
-state: Low
-issue: FIXED (Added NULL checks for all malloc calls in ARM64 and x86 Linux).
+state: Medium
+issue: StructLiteral (line 551) and input() (line 718) call _malloc but do not check for NULL returns. Passing a NULL pointer to subsequent _str or _scanf calls will result in a runtime crash.
 
 6:
-bug: Inconsistent Scaling for Struct Arrays
-state: Low
-issue: FIXED (Implemented correct scaling in IndexExpr assignments).
+bug: Inconsistent Scaling for Struct Arrays (Load Path)
+state: High
+issue: IndexExpr load (line 597) is hardcoded to 8-byte scaling for non-ident receivers. Accessing an array returned by a function (e.g., get_tokens()[0]) where elements are 16-byte structs will result in incorrect offsets and data corruption.
 
 7:
 bug: Scientific Notation Integer Truncation (Parser)
@@ -37,12 +37,12 @@ issue: FIXED (Parser now identifies e/E literals as floats).
 8:
 bug: C Backend Variadic Println Missing
 state: Low
-issue: FIXED (Variadic support with type-aware printf).
+issue: The C backend println (line 148) only processes the first argument, whereas the ARM64 backend and language documentation suggest support for multiple space-separated arguments.
 
 9:
 bug: Missing Type Propagation for Custom Properties
 state: Low
-issue: IMPROVED (Expanded type mapping for LetStmt inference).
+issue: LetStmt type inference for PropertyAccess (line 201) is limited to a hardcoded list of common names. Accessing any user-defined property will result in the variable being typed as 'int' regardless of the actual field type.
 
 10:
 bug: Shared Condition State Corruption (Integer Paths)
@@ -56,33 +56,33 @@ issue: FIXED (Added local label capture and increment in read_file).
 
 12:
 bug: ArrayLiteral Scaling Failure for CallExpr
-state: Low
-issue: FIXED (Added conservative 16-byte scaling for function results in arrays).
+state: High
+issue: The element size heuristic for ArrayLiteral (line 528) only handles StructLiteral and certain Identifiers. If an array is initialized with function results (e.g., [new_token()]), it defaults to 8-byte scaling, corrupting memory for 16-byte structs.
 
 13:
 bug: Incomplete ReturnStmt in x86 Linux
-state: Low
-issue: FIXED (Implemented floating-point returns via xmm0).
+state: Medium
+issue: The x86_64 Linux backend (line 81) implements ReturnStmt but does not handle floating-point returns (which should use xmm0), leading to platform parity issues with the ARM64 backend.
 
 14:
 bug: Lack of Error Information in OPM 'get'
 state: Low
-issue: FIXED (Added error hints for network/permissions/not-found).
+issue: opl.v (line 49) reports a failure if git clone fails but does not parse the output to tell the user if it was a network error, missing repo, or local permission issue.
 
 15:
 bug: Memory Leak by Design (No GC)
 state: High
-issue: ACKNOWLEDGED (Added free() built-in; GC is a future milestone).
+issue: Following the fix to prevent stack escape, StructLiteral and input() now use malloc. Without a free() implementation or a garbage collector, long-running OPL programs will leak memory.
 
 16:
-bug: Hardcoded Linker
+bug: Missing Type Propagation for Method Returns
 state: Low
-issue: FIXED (Now respects CC environment variable or falls back to clang/gcc).
+issue: LetStmt type inference for MethodCall in ARM64 backend (line 193) is hardcoded to recognize only a few methods. Any other method return will default to 'int'.
 
 17:
 bug: Missing Filename Sanitization in OPM
 state: Low
-issue: FIXED (Added sanitization for shell metacharacters in repo names).
+issue: The 'get' command (line 45) clones into './opl_modules/${repo}'. If the repo string contains shell meta-characters, os.execute might fail or behave unexpectedly.
 
 18:
 bug: Lack of Recursion Depth Limit in Parser
@@ -91,10 +91,10 @@ issue: FIXED (Added depth 100 limit).
 
 19:
 bug: C Backend Println Float Truncation
-state: Low
-issue: FIXED (Using %.15g for full precision).
+state: Medium
+issue: The C backend uses %f for floats (line 154) but does not allow specifying precision, which might lead to unexpected truncation for very small or large values.
 
 20:
 bug: Redundant Alignment in ASM Data Section
 state: Low
-issue: FIXED (Optimized alignment logic to reduce padding).
+issue: ARM64 backend adds '.align 3' before every string and float literal (lines 336, 346). This adds unnecessary padding and bloat to the binary for consecutive literals.
