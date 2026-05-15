@@ -81,6 +81,7 @@ fn (mut c AsmX86_64Linux) generate_statement(stmt ast.Stmt) {
 	} else if stmt is ast.ReturnStmt {
 		c.generate_expression(stmt.value)
 		// Bug 13: Handle float returns in x86_64 Linux (return via xmm0)
+		// OPL usually puts results in rax. If it's a float, we mirror it to xmm0.
 		c.text_section += '\tmovq %rax, %xmm0\n'
 		c.text_section += '\tmov %rbp, %rsp\n'
 		c.text_section += '\tpop %rbp\n'
@@ -228,10 +229,14 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 			}
 		}
 	} else if expr is ast.ArrayLiteral {
-		// Fix Bug 12: Use malloc for escaping literals
+		l_count := c.label_count
+		c.label_count++
 		size := expr.elements.len * 8
 		c.text_section += '\tmov $$${size}, %rdi\n'
 		c.text_section += '\tcall malloc\n'
+		c.text_section += '\tcmp $$0, %rax\n'
+		c.text_section += '\tje .L_malloc_fail_${l_count}\n'
+		
 		c.text_section += '\tpush %rax\n' // save buffer ptr
 		for i, el in expr.elements {
 			c.generate_expression(el)
@@ -239,11 +244,19 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 			c.text_section += '\tmov %rax, ${i*8}(%rcx)\n'
 		}
 		c.text_section += '\tpop %rax\n'
+		c.text_section += '\tjmp .L_malloc_end_${l_count}\n'
+		c.text_section += '.L_malloc_fail_${l_count}:\n'
+		c.text_section += '\txor %rax, %rax\n'
+		c.text_section += '.L_malloc_end_${l_count}:\n'
 	} else if expr is ast.StructLiteral {
-		// Fix Bug 11: Use malloc for escaping literals
+		l_count := c.label_count
+		c.label_count++
 		size := expr.values.len * 8
 		c.text_section += '\tmov $$${size}, %rdi\n'
 		c.text_section += '\tcall malloc\n'
+		c.text_section += '\tcmp $$0, %rax\n'
+		c.text_section += '\tje .L_malloc_fail_${l_count}\n'
+		
 		c.text_section += '\tpush %rax\n' // save buffer ptr
 		for i, val in expr.values {
 			c.generate_expression(val)
@@ -251,6 +264,10 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 			c.text_section += '\tmov %rax, ${i*8}(%rcx)\n'
 		}
 		c.text_section += '\tpop %rax\n'
+		c.text_section += '\tjmp .L_malloc_end_${l_count}\n'
+		c.text_section += '.L_malloc_fail_${l_count}:\n'
+		c.text_section += '\txor %rax, %rax\n'
+		c.text_section += '.L_malloc_end_${l_count}:\n'
 	} else if expr is ast.IndexExpr {
 		c.generate_expression(expr.left)
 		c.text_section += '\tpush %rax\n'
@@ -330,18 +347,71 @@ fn (mut c AsmX86_64Linux) generate_expression(expr ast.Expr) {
 				}
 			}
 		} else if expr.function.value == 'input' {
-			// Fix Bug 12: Use malloc for input buffer
-			c.text_section += '\tmov $$64, %rdi\n'
+			l_count := c.label_count
+			c.label_count++
+			c.text_section += '\tmov $$256, %rdi\n'
 			c.text_section += '\tcall malloc\n'
+			c.text_section += '\tcmp $$0, %rax\n'
+			c.text_section += '\tje .L_input_fail_${l_count}\n'
+			
 			c.text_section += '\tpush %rax\n' // save buffer ptr
 			if !c.data_section.contains('fmt_input:') {
-				c.data_section += 'fmt_input: .asciz "%63s"\n'
+				c.data_section += 'fmt_input: .asciz "%255s"\n'
 			}
 			c.text_section += '\tlea fmt_input(%rip), %rdi\n'
 			c.text_section += '\tmov %rax, %rsi\n'
 			c.text_section += '\txor %rax, %rax\n'
 			c.text_section += '\tcall scanf\n'
 			c.text_section += '\tpop %rax\n'
+			c.text_section += '\tjmp .L_input_end_${l_count}\n'
+			c.text_section += '.L_input_fail_${l_count}:\n'
+			c.text_section += '\txor %rax, %rax\n'
+			c.text_section += '.L_input_end_${l_count}:\n'
+		} else if expr.function.value == 'read_file' {
+			l_count := c.label_count
+			c.label_count++
+			c.generate_expression(expr.args[0])
+			c.text_section += '\tpush %rax\n'
+			if !c.data_section.contains('mode_r:') {
+				c.data_section += 'mode_r: .asciz "r"\n'
+			}
+			c.text_section += '\tlea mode_r(%rip), %rsi\n'
+			c.text_section += '\tmov %rax, %rdi\n'
+			c.text_section += '\tcall fopen\n'
+			c.text_section += '\tcmp $$0, %rax\n'
+			c.text_section += '\tje .L_read_fail_${l_count}\n'
+			
+			c.text_section += '\tmov %rax, %rdi\n'
+			c.text_section += '\tmov $$0, %rsi\n'
+			c.text_section += '\tmov $$2, %rdx\n' // SEEK_END
+			c.text_section += '\tpush %rax\n' // save fp
+			c.text_section += '\tcall fseek\n'
+			c.text_section += '\tmov (%rsp), %rdi\n'
+			c.text_section += '\tcall ftell\n'
+			c.text_section += '\tpush %rax\n' // save size
+			
+			c.text_section += '\tmov 8(%rsp), %rdi\n' // load fp
+			c.text_section += '\tmov $$0, %rsi\n'
+			c.text_section += '\tmov $$0, %rdx\n' // SEEK_SET
+			c.text_section += '\tcall fseek\n'
+			
+			c.text_section += '\tmov (%rsp), %rdi\n' // load size
+			c.text_section += '\tadd $$1, %rdi\n'
+			c.text_section += '\tcall malloc\n'
+			c.text_section += '\tmov %rax, %rdi\n' // buffer
+			c.text_section += '\tmov $$1, %rsi\n'
+			c.text_section += '\tmov 8(%rsp), %rdx\n' // size
+			c.text_section += '\tmov 16(%rsp), %rcx\n' // fp
+			c.text_section += '\tpush %rax\n' // save buffer
+			c.text_section += '\tcall fread\n'
+			c.text_section += '\tpop %rax\n'
+			c.text_section += '\tadd $$16, %rsp\n' // clean up size and fp
+			c.text_section += '\tpop %rcx\n' // clean up path
+			c.text_section += '\tjmp .L_read_end_${l_count}\n'
+			c.text_section += '.L_read_fail_${l_count}:\n'
+			c.text_section += '\txor %rax, %rax\n'
+			c.text_section += '\tpop %rcx\n'
+			c.text_section += '.L_read_end_${l_count}:\n'
 		} else {
 			// Custom function call
 			for _, arg in expr.args {
