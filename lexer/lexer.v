@@ -158,6 +158,16 @@ fn (mut l Lexer) read_number() string {
 			l.read_char()
 		}
 	}
+	// Bug 7: Support scientific notation
+	if l.ch == `e` || l.ch == `E` {
+		l.read_char()
+		if l.ch == `+` || l.ch == `-` {
+			l.read_char()
+		}
+		for l.is_digit() {
+			l.read_char()
+		}
+	}
 	return l.input[start_pos..l.pos]
 }
 
