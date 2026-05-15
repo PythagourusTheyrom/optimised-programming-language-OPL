@@ -243,7 +243,9 @@ pub fn (mut c Compiler) write_and_build(filename string) {
 	os.write_file(c_filename, c.c_code) or { panic(err) }
 	
 	exe_name := filename.replace('.opl', '')
-	cmd := 'gcc -O3 -o $exe_name $c_filename'
+	cc := os.getenv('CC')
+	if cc == '' { cc = 'gcc' }
+	cmd := '$cc -O3 -o $exe_name $c_filename'
 	res := os.execute(cmd)
 	if res.exit_code == 0 {
 		println('Successfully built to executable: ./$exe_name')
