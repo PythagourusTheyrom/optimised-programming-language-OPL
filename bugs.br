@@ -9,7 +9,92 @@ bug: C Backend Missing ReturnStmt
 state: High
 issue: The C backend has no case for ReturnStmt in compile_statement — all functions silently return without a value.
 
-20:
+3:
 bug: Lack of Non-Inclusive For-Loop Syntax
 state: Low
 issue: The language documentation implies 'to' is inclusive, but there is no syntax or backend support for non-inclusive loops (e.g. '0 to N-1' requires manual math), which is unconventional for many developers.
+
+4:
+bug: Shared Condition State Corruption
+state: Medium
+issue: If/While conditions in ARM64 backend (lines 245-252) OR the integer result (x0) with the float result (d0). Since d0 is never cleared between expressions, a previous floating-point calculation can cause a subsequent integer-based 'if' or 'while' to evaluate to true incorrectly.
+
+5:
+bug: Memory Leak by Design (No free() or GC)
+state: High
+issue: Following the fix to prevent stack escape, StructLiteral and input() now use malloc for every allocation. Without a free() implementation or a garbage collector, long-running OPL programs or loops with literals will leak memory until the system is exhausted.
+
+6:
+bug: Incomplete Type Inference for Method Returns
+state: Low
+issue: LetStmt type inference for MethodCall in ARM64 backend (line 193) is hardcoded to recognize only the 'check' method. Any other method return will default to 'int', potentially breaking subsequent operations on the variable.
+
+7:
+bug: Hardcoded "Engine" Struct Type Fallback
+state: High
+issue: Property access and assignment in ARM64 backend still default to the "Engine" struct type (lines 371, 568) if the receiver's type cannot be inferred. While a search hack was added, the default remains brittle.
+
+8:
+bug: Sync Script CPU Exhaustion
+state: Low
+issue: The sync.sh script (line 3) runs an infinite loop with git pull/push and no sleep/delay. This will cause high CPU usage and unnecessary network traffic when the developer is idle.
+
+9:
+bug: PrefixExpr '!' Float Blindness
+state: Medium
+issue: The ARM64 PrefixExpr '!' handler (line 593) only inspects the integer register x0. If used on a float variable, it ignores the d0 register, leading to incorrect logical inversion of floating-point values.
+
+10:
+bug: PropertyAccess on Float Result Crash
+state: Medium
+issue: The PropertyAccess handler in ARM64 (line 565) calls generate_expression on the receiver. If the receiver is a float, the result is in d0, but the subsequent address calculation uses x0, leading to a crash or memory corruption.
+
+11:
+bug: Missing Struct Size in ArrayLiteral Load
+state: High
+issue: ArrayLiteral load in ARM64 (line 513) is hardcoded to 8-byte scaling for all non-string arrays. If OPL eventually supports arrays of 16-byte structs (like the Token struct used in bootstrap), indexing will be offset and corrupt.
+
+12:
+bug: Scanf Pointer Safety in input()
+state: Medium
+issue: The input() implementation (line 726) passes the malloc'd buffer to _scanf without checking if the malloc succeeded. A failed allocation will result in a NULL pointer passed to _scanf, causing a crash.
+
+13:
+bug: Incomplete ReturnStmt in x86 Linux
+state: Medium
+issue: The x86_64 Linux backend (line 81) implements ReturnStmt but does not handle floating-point returns (which should use xmm0), leading to platform parity issues with the ARM64 backend.
+
+14:
+bug: Lack of Variadic Println in C Backend
+state: Low
+issue: The C backend println (line 148) only processes the first argument, whereas the ARM64 backend and language documentation suggest support for multiple space-separated arguments.
+
+15:
+bug: Redundant alignment in ARM64 FloatLit
+state: Low
+issue: FloatLit generation (line 336) adds '.align 3' before every float constant in the data section. While correct for the first one, it adds unnecessary bloat if many floats are defined consecutively.
+
+16:
+bug: Missing Error Message for Failed Read
+state: Low
+issue: When read_file fails (line 746), it returns 0 (NULL) but does not provide any mechanism for the OPL program to determine why it failed (e.g., file not found vs permission denied).
+
+17:
+bug: Unprotected Label Count in read_file
+state: Medium
+issue: read_file (line 745) uses c.label_count but does not increment it, potentially causing label collisions if multiple read_file calls are made in the same function or if other control flow structures follow it.
+
+18:
+bug: Fixed Buffer Size for input()
+state: Low
+issue: input() is hardcoded to 64 bytes (line 717). There is no way for a user to specify a larger buffer, limiting the utility of the built-in for long user inputs.
+
+19:
+bug: Missing Type Propagation for Property Access
+state: Low
+issue: LetStmt type inference for PropertyAccess (line 196) only handles 'status' and 'name'. Accessing any other property will result in the variable being typed as 'int' regardless of the actual field type.
+
+20:
+bug: Inconsistent Filename Handling in OPM
+state: Low
+issue: The 'get' command in opl.v (line 45) clones into './opl_modules/${repo}'. If the repo string has special characters that git handles but V's os.execute might mangle in some shells, it could lead to inconsistent folder naming.
