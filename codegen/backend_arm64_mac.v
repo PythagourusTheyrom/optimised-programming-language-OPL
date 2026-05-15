@@ -525,8 +525,6 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				c.text_section += '\tcset x0, $cond\n'
 				c.text_section += '\tfmov d0, #0.0\n' // Bug 10: Clear d0
 			}
-				c.text_section += '\tcset x0, ne\n'
-			}
 		}
 	} else if expr is ast.ArrayLiteral {
 		mut element_size := 8
