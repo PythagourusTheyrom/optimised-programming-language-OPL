@@ -15,79 +15,79 @@ state: Medium
 issue: The C backend defaults to '%d' for all identifiers/infix expressions, producing wrong output or crashes for floats and strings.
 
 4:
-bug: OPM Command Injection
-state: Critical
-issue: opl.v line 34 uses os.system() with raw user input from args[2], allowing arbitrary shell command injection (e.g. `opl get 'pkg; rm -rf /'`).
-
-5:
 bug: Incomplete Target Check in Main
 state: Medium
 issue: opl.v only checks for macOS/native, failing to correctly route to x86_64 backends when --target=linux is passed on a non-Linux host.
 
-6:
-bug: ASM Filename Collision
-state: Low
-issue: opl.v replaces '.opl' with '.s' silently, potentially overwriting a handwritten assembly file with the same name.
-
-7:
+5:
 bug: Hardcoded Clang Linker
 state: Low
 issue: opl.v hardcodes 'clang' for linking, blocking use on systems where only GCC or MSVC is available.
 
-8:
+6:
 bug: x86 Linux — Method Call Name Collision
 state: Medium
 issue: The x86 backend uses bare method names as call targets, unlike ARM64's `Type_method` prefixing. Causes linker errors for same-named methods on different structs.
 
-9:
+7:
 bug: x86 Linux — Stack Pointer Leak in SpawnStmt
 state: High
 issue: The x86 backend's SpawnStmt does manual stack manipulation that can misalign the stack if interrupted or called recursively.
 
-10:
+8:
 bug: x86 Linux — Array Index Hardcoded to 8 Bytes
 state: High
 issue: The x86 backend hardcodes 8-byte element size for all array indexing, breaking access for 16-byte structs like Token.
 
-11:
+9:
 bug: x86 Linux — Missing BoolLit Handler
 state: Medium
 issue: The x86 backend has no case for BoolLit in generate_expression. Boolean literals are unusable on this platform.
 
-12:
+10:
 bug: Unchecked Scanf Input Length
 state: Medium
 issue: The input() built-in uses '%s' in scanf without a length limit, leaving a stack buffer overflow vulnerability.
 
-13:
-bug: Panic on Failed Package Fetch
-state: Low
-issue: status: PENDING (os.execute added, but needs more robustness)
-
-14:
+11:
 bug: StructLiteral Stack Escape
 state: Critical
 issue: StructLiteral (backend_arm64_mac.v:491) returns the address of a stack-allocated buffer. If a struct literal is returned from a function or stored in a persistent object, it becomes a dangling pointer.
 
-15:
+12:
 bug: Input() Returns Dangling Stack Pointer
 state: Critical
 issue: The input() built-in (line 683) allocates a 64-byte buffer on the current function's stack frame and returns its address. Once the function returns, the string becomes invalid.
 
-16:
-bug: Hardcoded "Engine" Struct Type Fallback
-state: High
-issue: Property access and assignment still default to the "Engine" struct type (lines 360, 568) if the receiver's type cannot be inferred, leading to incorrect field offsets for user-defined structs.
-
-17:
+13:
 bug: Incomplete PrefixExpr Float Handling
 state: Medium
-issue: PrefixExpr '!' (line 572) only checks the integer register x0. If applied to a float variable or literal, it will use whatever garbage was left in x0 instead of checking the float register d0.
+issue: PrefixExpr '!' (line 593) only checks the integer register x0. If applied to a float variable or literal, it will use whatever garbage was left in x0 instead of checking the float register d0.
 
-18:
+14:
 bug: ArrayLiteral Size Heuristic Fragility
 state: High
 issue: The element size heuristic for ArrayLiteral (line 445) only checks if the first element is a StructLiteral. If the first element is a variable or function call returning a struct, it defaults to 8 bytes, causing stack corruption.
+
+15:
+bug: Float Infix Result Type Corruption
+state: High
+issue: LetStmt type inference (line 169) defaults to 'int'. For float calculations like 'let x = 1.0 + 2.0', the result is stored via 'str x0' (line 186) instead of 'str d0', corrupting the floating-point value.
+
+16:
+bug: Shared Condition State Corruption
+state: Medium
+issue: If/While conditions (lines 238-241) always OR the integer result (x0) with the float result (d0). If d0 contains a non-zero value from a previous expression, integer conditions will always evaluate to true.
+
+17:
+bug: Read_file Null Pointer Crash
+state: High
+issue: The read_file implementation (line 700) does not check the return value of _fopen. If the file does not exist, it will pass a NULL pointer to _fseek and _ftell, causing a crash.
+
+18:
+bug: Hardcoded "Engine" Struct Type Fallback
+state: High
+issue: Property access and assignment still default to the "Engine" struct type (lines 360, 568) if the receiver's type cannot be inferred, leading to incorrect field offsets for user-defined structs.
 
 19:
 bug: PropertyAccess on Float Receiver

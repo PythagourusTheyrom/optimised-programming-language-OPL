@@ -196,6 +196,15 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 			if stmt.value.property.value == 'status' { v_type = 'string' }
 			if stmt.value.property.value == 'name' { v_type = 'string' }
 		}
+		else if stmt.value is ast.InfixExpr {
+			// Bug 15: Infer float type for float infix expressions
+			mut is_float := false
+			if stmt.value.left is ast.FloatLit || stmt.value.right is ast.FloatLit { is_float = true }
+			else if stmt.value.left is ast.Ident {
+				if c.var_types[stmt.value.left.value] == 'float' { is_float = true }
+			}
+			if is_float { v_type = 'float' }
+		}
 		c.var_types[stmt.name.value] = v_type
 		
 		if v_type == 'float' {
@@ -236,9 +245,10 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.generate_expression(stmt.condition)
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
 		c.text_section += '\tcmp x0, #0\n'
+		c.text_section += '\tcset x1, ne\n' // x1 = (x0 != 0)
 		c.text_section += '\tfcmp d0, #0.0\n'
-		c.text_section += '\tcset x1, ne\n'
-		c.text_section += '\torr x0, x0, x1\n'
+		c.text_section += '\tcset x2, ne\n' // x2 = (d0 != 0.0)
+		c.text_section += '\torr x0, x1, x2\n'
 		c.text_section += '\tcmp x0, #0\n'
 		l_count := c.label_count
 		c.label_count++
@@ -261,9 +271,10 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		c.generate_expression(stmt.condition)
 		c.text_section += '\t; --- FLOAT SAFE CONDITION ---\n'
 		c.text_section += '\tcmp x0, #0\n'
-		c.text_section += '\tfcmp d0, #0.0\n'
 		c.text_section += '\tcset x1, ne\n'
-		c.text_section += '\torr x0, x0, x1\n'
+		c.text_section += '\tfcmp d0, #0.0\n'
+		c.text_section += '\tcset x2, ne\n'
+		c.text_section += '\torr x0, x1, x2\n'
 		c.text_section += '\tcmp x0, #0\n'
 		c.text_section += '\tb.eq .L_while_end_$l_count\n'
 		for s in stmt.body.statements {
@@ -370,7 +381,19 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 				}
 				
 				c.generate_expression(expr.left.object) // x0 = base address
-				offset := c.struct_offsets['${stype}_${expr.left.property.value}'] * 8
+				
+				// Fix Bug 18: More robust struct offset lookup
+				offset_key := '${stype}_${expr.left.property.value}'
+				if offset_key !in c.struct_offsets {
+					// Last ditch effort: scan all structs for this property
+					for k, v in c.struct_offsets {
+						if k.ends_with('_${expr.left.property.value}') {
+							offset_key = k
+							break
+						}
+					}
+				}
+				offset := c.struct_offsets[offset_key] * 8
 				
 				if is_ptr {
 					c.text_section += '\tadd x1, x0, #$offset\n'
@@ -459,10 +482,16 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 		}
 	} else if expr is ast.ArrayLiteral {
 		mut element_size := 8
-		// Heuristic: If we are initializing Tokens, use 16 bytes
 		if expr.elements.len > 0 {
-			if expr.elements[0] is ast.StructLiteral {
-				element_size = 16 
+			first := expr.elements[0]
+			if first is ast.StructLiteral { element_size = first.values.len * 8 }
+			else if first is ast.Ident {
+				if first.value in c.var_types {
+					stype := c.var_types[first.value]
+					if stype in c.struct_fields {
+						element_size = c.struct_fields[stype].len * 8
+					}
+				}
 			}
 		}
 		
@@ -481,14 +510,19 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 		}
 		c.text_section += '\tadd x0, x29, #$base_offset\n'
 	} else if expr is ast.StructLiteral {
-		base_offset := c.stack_ptr
-		c.stack_ptr += expr.values.len * 8
+		// Fix Bug 11: Use malloc for struct literals to prevent stack escape
+		size := expr.values.len * 8
+		c.text_section += '\tmov x0, #$size\n'
+		c.text_section += '\tbl _malloc\n'
+		c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer ptr
+		
 		for i, val in expr.values {
 			c.generate_expression(val)
-			offset := base_offset + (i * 8)
-			c.text_section += '\tstr x0, [x29, #$offset]\n'
+			c.text_section += '\tldr x1, [sp]\n' // load buffer ptr
+			offset := i * 8
+			c.text_section += '\tstr x0, [x1, #$offset]\n'
 		}
-		c.text_section += '\tadd x0, x29, #$base_offset\n'
+		c.text_section += '\tldr x0, [sp], #16\n' // pop buffer ptr to x0
 	} else if expr is ast.IndexExpr {
 		c.generate_expression(expr.left)
 		c.text_section += '\tstr x0, [sp, #-16]!\n'
@@ -557,13 +591,11 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 		}
 		c.text_section += '\tbl $func_name\n'
 	} else if expr is ast.PropertyAccess {
-		// Fix: Load the base address from the local variable
-		if expr.object is ast.Ident {
-			offset := c.variables[expr.object.value]
-			c.text_section += '\tldr x0, [x29, #$offset]\n'
-		} else {
-			c.generate_expression(expr.object)
-		}
+		// Fix Bug 19: Load the base address, handling float receivers
+		c.generate_expression(expr.object)
+		// Result address in x0 (for pointers/structs) or bits in d0 (for floats)
+		// But in OPL, PropertyAccess on a float is usually a cast or invalid.
+		// We'll ensure x0 is the base for address calculation.
 		
 		mut stype := 'Engine'
 		if expr.object is ast.Ident {
@@ -575,7 +607,17 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			if expr.object.function.value == 'new_parser' { stype = 'Parser' }
 		}
 		
-		mut offset := c.struct_offsets['${stype}_${expr.property.value}'] * 8
+		// Fix Bug 18: More robust struct offset lookup
+		offset_key := '${stype}_${expr.property.value}'
+		if offset_key !in c.struct_offsets {
+			for k, v in c.struct_offsets {
+				if k.ends_with('_${expr.property.value}') {
+					offset_key = k
+					break
+				}
+			}
+		}
+		mut offset := c.struct_offsets[offset_key] * 8
 		if offset > 0 {
 			c.text_section += '\tadd x0, x0, #$offset\n'
 		}
@@ -590,6 +632,12 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 	} else if expr is ast.PrefixExpr {
 		c.generate_expression(expr.right)
 		if expr.op == '!' {
+			// Bug 13: Check both x0 and d0 for logical NOT
+			c.text_section += '\tcmp x0, #0\n'
+			c.text_section += '\tcset x1, ne\n'
+			c.text_section += '\tfcmp d0, #0.0\n'
+			c.text_section += '\tcset x2, ne\n'
+			c.text_section += '\torr x0, x1, x2\n'
 			c.text_section += '\tcmp x0, #0\n'
 			c.text_section += '\tcset x0, eq\n'
 		} else if expr.op == '-' {
@@ -665,22 +713,18 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tadd x0, x0, fmt_nl@PAGEOFF\n'
 			c.text_section += '\tbl _printf\n' // sp is already aligned here
 		} else if expr.function.value == 'input' {
-			// Allocate a buffer on the stack (e.g., 64 bytes)
-			buffer_offset := c.stack_ptr
-			c.stack_ptr += 64
-			c.text_section += '\tadd x0, x29, #$buffer_offset\n'
+			// Fix Bug 12: Use malloc for input buffer to prevent stack escape
+			c.text_section += '\tmov x0, #64\n'
+			c.text_section += '\tbl _malloc\n'
 			c.text_section += '\tstr x0, [sp, #-16]!\n' // save buffer addr
 			if !c.data_section.contains('fmt_input:') {
-				c.data_section += 'fmt_input: .asciz "%63s"\n' // Fix Bug 12: Limit input length
+				c.data_section += 'fmt_input: .asciz "%63s"\n'
 			}
 			c.text_section += '\tadrp x0, fmt_input@PAGE\n'
 			c.text_section += '\tadd x0, x0, fmt_input@PAGEOFF\n'
-			c.text_section += '\tldr x1, [sp], #16\n' // buffer address into x1
-			c.text_section += '\tsub sp, sp, #16\n'
+			c.text_section += '\tldr x1, [sp]\n' // buffer address into x1
 			c.text_section += '\tbl _scanf\n'
-			c.text_section += '\tadd sp, sp, #16\n'
-			// Return buffer address in x0
-			c.text_section += '\tadd x0, x29, #$buffer_offset\n'
+			c.text_section += '\tldr x0, [sp], #16\n' // result is the buffer pointer
 		} else if expr.function.value == 'malloc' {
 			c.generate_expression(expr.args[0])
 			c.text_section += '\tsub sp, sp, #16\n'
@@ -696,6 +740,13 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			c.text_section += '\tadrp x1, mode_r@PAGE\n'
 			c.text_section += '\tadd x1, x1, mode_r@PAGEOFF\n'
 			c.text_section += '\tbl _fopen\n'
+			// Fix Bug 17: Check for NULL pointer from fopen
+			c.text_section += '\tcmp x0, #0\n'
+			c.text_section += '\tb.ne .L_fopen_success_${c.label_count}\n'
+			c.text_section += '\tmov x0, #0\n' // Return NULL on failure
+			c.text_section += '\tadd sp, sp, #16\n' // Clean up stack slot
+			c.text_section += '\tb .L_fopen_end_${c.label_count}\n'
+			c.text_section += '.L_fopen_success_${c.label_count}:\n'
 			c.text_section += '\t; fopen result in x0. Save it.\n'
 			c.text_section += '\tstr x0, [sp], #16\n' // replace path with FILE*
 			c.text_section += '\tstr x0, [sp, #-16]!\n'
@@ -738,6 +789,8 @@ fn (mut c AsmArm64Macos) generate_expression(expr ast.Expr) {
 			// Result is the buffer pointer
 			c.text_section += '\tldr x0, [sp]\n'
 			c.text_section += '\tadd sp, sp, #48\n' // cleanup fp, size, buffer
+			c.text_section += '.L_fopen_end_${c.label_count}:\n'
+			c.label_count++
 		} else if expr.function.value == 'len' {
 			arg := expr.args[0]
 			if arg is ast.ArrayLiteral {

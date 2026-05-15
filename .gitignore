@@ -37,3 +37,6 @@ lldb_script
 
 # Test
 test_*.opl
+
+# Sync File
+sync.sh
