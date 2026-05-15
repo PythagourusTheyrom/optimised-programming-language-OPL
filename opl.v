@@ -49,6 +49,13 @@ fn main() {
 			println("Package ${repo} installed successfully in ./opl_modules/${folder_name}")
 		} else {
 			println("Error: Failed to fetch package ${repo}.")
+			if res_clone.output.contains("not found") {
+				println("Hint: Repository might not exist or is private.")
+			} else if res_clone.output.contains("Permission denied") {
+				println("Hint: Check your SSH keys or repository permissions.")
+			} else if res_clone.output.contains("could not resolve host") {
+				println("Hint: Network error. Check your internet connection.")
+			}
 			println(res_clone.output)
 		}
 		return
