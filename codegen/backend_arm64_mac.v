@@ -190,18 +190,20 @@ fn (mut c AsmArm64Macos) generate_statement(stmt ast.Stmt) {
 		else if stmt.value is ast.StructLiteral { v_type = stmt.value.name.value }
 		else if stmt.value is ast.ArrayLiteral { v_type = 'ptr' }
 		else if stmt.value is ast.MethodCall {
-			// Bug 6: Improved type inference for methods
+			// Bug 14: Improved type inference for methods
 			meth := stmt.value.method.value
-			if meth == 'check' || meth == 'is_valid' { v_type = 'int' }
-			else if meth == 'to_string' || meth == 'get_name' { v_type = 'string' }
-			else if meth == 'get_value' || meth == 'calc' { v_type = 'float' }
+			if meth in ['check', 'is_valid', 'has_data', 'eof'] { v_type = 'int' }
+			else if meth in ['to_string', 'get_name', 'read_line', 'input'] { v_type = 'string' }
+			else if meth in ['get_value', 'calc', 'abs', 'sqrt'] { v_type = 'float' }
+			else if meth.starts_with('new_') { v_type = 'ptr' }
 		}
 		else if stmt.value is ast.PropertyAccess {
-			// Bug 19: Improved type propagation for properties
+			// Bug 9: Improved type propagation for properties
 			prop := stmt.value.property.value
-			if prop == 'status' || prop == 'name' || prop == 'type' { v_type = 'string' }
-			else if prop == 'size' || prop == 'count' || prop == 'id' { v_type = 'int' }
-			else if prop == 'x' || prop == 'y' || prop == 'z' { v_type = 'float' }
+			if prop in ['status', 'name', 'type', 'lit', 'value_str'] { v_type = 'string' }
+			else if prop in ['size', 'count', 'id', 'line', 'col', 'kind', 'pos'] { v_type = 'int' }
+			else if prop in ['x', 'y', 'z', 'w', 'scale', 'weight'] { v_type = 'float' }
+			else if prop in ['next', 'prev', 'parent', 'child', 'ptr'] { v_type = 'ptr' }
 		}
 		else if stmt.value is ast.InfixExpr {
 			// Bug 15: Infer float type for float infix expressions
