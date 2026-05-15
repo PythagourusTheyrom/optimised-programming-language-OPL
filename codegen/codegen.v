@@ -145,20 +145,20 @@ fn (mut c Compiler) compile_expression(expr ast.Expr) {
 		c.c_code += ')'
 	} else if expr is ast.CallExpr {
 		if expr.function.value == 'println' {
-			if expr.args.len > 0 {
-				arg := expr.args[0]
+			// Bug 14: Support multiple arguments in println
+			for i, arg in expr.args {
 				// Better type detection for C backend println
 				if arg is ast.StringLit {
-					c.c_code += 'printf("%s\\n", '
+					c.c_code += 'printf("%s", '
 				} else if arg is ast.FloatLit {
-					c.c_code += 'printf("%f\\n", '
+					c.c_code += 'printf("%f", '
 				} else {
-					// Default to long long for ints and other variables
-					c.c_code += 'printf("%lld\\n", (long long)' 
+					c.c_code += 'printf("%lld", (long long)' 
 				}
 				c.compile_expression(arg)
-				c.c_code += ')'
+				c.c_code += '); printf(" ");'
 			}
+			c.c_code += ' printf("\\n")'
 		} else {
 			c.c_code += '${expr.function.value}('
 			for i, arg in expr.args {
